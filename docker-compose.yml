@@ -1,0 +1,14 @@
+services:
+  mgmt:
+    build:
+      context: .                          # base folder — gives Docker access to /src and /dockerfiles
+      dockerfile: Dockerfiles/Dockerfile
+    container_name: mgmt
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data                  # chores/*.txt and config.json persist here on the host
+    environment:
+      - DATA_DIR=/app/data
+      - PORT=3000
+    restart: unless-stopped

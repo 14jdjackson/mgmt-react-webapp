@@ -1,0 +1,82 @@
+<head>
+    <title>MGMT admin page</title>
+    <link rel="stylesheet" href="index.css">
+    <style>
+        body { background-color: #121212; color: #f5f5f5; font-family: Arial, sans-serif; }
+        #topbar { background-color: #1f1f1f; border-bottom: 1px solid #333; }
+        #backButton { background-color: #333; color: #f5f5f5; border: 1px solid #555; border-radius: 4px; padding: 6px 12px; cursor: pointer; margin-right: 10px; }
+        #backButton:hover { background-color: #444; }
+        #choreAdmin, #Settings, #spendingDiv { background-color: #1b1b1b; border: 1px solid #333; margin: 10px; padding: 10px; }
+        input, select, button { color: #f5f5f5; background-color: #222; border: 1px solid #555; }
+        label { color: #e2e2e2; }
+    </style>
+</head>
+<body>
+    <div id="topbar">
+        <button id="backButton" onclick="window.location.href='index.html'">Back to MGMT</button>
+    </div>
+    <h1>MGMT admin page</h1>
+    <div id="Settings">
+        <h2>Settings</h2>
+
+        <h3>Google Calendar embed URL</h3>
+        <p style="color:#aaa;font-size:0.85rem;margin-bottom:6px;">
+            In Google Calendar → Settings → share calendar → paste the "Embed code" src URL here.
+        </p>
+        <input type="text" id="calendarUrlInput" style="width:100%;max-width:700px;" placeholder="https://calendar.google.com/calendar/embed?..." />
+        <button id="saveCalendarUrlBtn" style="margin-left:8px;">Save URL</button>
+        <p id="calendarUrlMessage" style="display:none;"></p>
+
+        <hr style="border-color:#333;margin:16px 0;" />
+
+        <h3>Admin PIN</h3>
+        <label for="adminPinInput">New 4-digit PIN:</label>
+        <input type="password" id="adminPinInput" maxlength="4" pattern="\d{4}" placeholder="1234" />
+        <button id="setAdminPinBtn">Set PIN</button>
+        <p id="adminPinMessage" style="display:none;"></p>
+    </div>
+
+    <div id="choreAdmin">
+        <h2>Add/Remove Chores/Tasks</h2>
+        <label for="newChore">Task name:</label>
+        <input type="text" id="newChore" placeholder="e.g. Water plants" />
+        <label for="choreReset">Reset:</label>
+        <select id="choreReset">
+            <option value="none">None</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+        </select>
+        <button id="addChoreBtn">Add chore</button>
+        <p id="choreMessage" style="color:green;display:none;"></p>
+
+        <h3>Existing tasks</h3>
+        <ul id="adminChoreList" style="list-style:none;padding-left:0;"></ul>
+        <p id="adminChoreListEmpty" style="color:#ccc;">No chores added yet.</p>
+        <hr />
+        <h3>Bulk import chores from .txt</h3>
+        <label for="importResetType">Imported tasks reset:</label>
+        <select id="importResetType">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="none">None</option>
+        </select>
+        <br />
+        <input type="file" id="choreFileInput" accept=".txt" />
+        <button id="importChoreBtn">Import chores</button>
+        <p id="importMessage" style="color:green;display:none;"></p>
+    </div>
+    <div id="resetDiv" style="background-color:#1b1b1b;border:1px solid #5a1a1a;margin:10px;padding:10px;">
+        <h2 style="color:#e57373;">Danger Zone</h2>
+        <p style="color:#aaa;">
+            Resets <strong>everything</strong>: clears the PIN, calendar URL, and all chores.
+            You will be sent back to the setup screen.
+        </p>
+        <button id="resetBtn" style="background-color:#5a1a1a;color:#f5f5f5;border:1px solid #e57373;padding:8px 16px;cursor:pointer;margin-top:8px;">
+            Reset Everything
+        </button>
+        <p id="resetMessage" style="display:none;"></p>
+    </div>
+    <script src="admin.js"></script>
+</body>

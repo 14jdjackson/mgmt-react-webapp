@@ -1,0 +1,40 @@
+<head>
+    <title>MGMT</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div id="topbar">
+        <button id="loginButton">Login</button>
+    </div>
+    <div id="dateTimeDiv">
+        <span id="dateTimeLabel">Loading date/time&nbsp;...</span>
+    </div>
+    <h2>Chores/Tasks</h2>
+    <div id="choresDiv">
+        <ul id="choresList">
+            <li>
+                <label>
+                    <input type="checkbox" hidden="false" data-reset="daily">
+                    Daily Task
+                </label>
+            </li>
+            <li>
+                <label>
+                    <input type="checkbox" hidden="false" data-reset="weekly">
+                    Weekly Task
+                </label>
+            </li>
+            <li>
+                <label>
+                    <input type="checkbox" hidden="false" data-reset="monthly">
+                    Monthly Task
+                </label>
+            </li>
+        </ul>
+    </div>
+    <div id="calendarDiv">
+        <h2>Calendar</h2>
+        <iframe src="about:blank" frameborder="0" scrolling="no"></iframe>
+    </div>
+    <script src="index.js"></script>
+</body>

@@ -1,0 +1,16 @@
+# .dockerignore — placed in the base folder alongside docker-compose.yml
+# Excludes files from the build context sent to Docker.
+
+# Runtime data (mounted as a volume — never baked into the image)
+data/
+
+# Node dependencies (installed fresh inside the image via npm install)
+src/node_modules/
+
+# Docker files themselves
+dockerfiles/
+docker-compose.yml
+.dockerignore
+
+# Documentation
+readme.md
