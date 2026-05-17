@@ -2,7 +2,7 @@ THIS APPLICATION IS A PERSONAL PROJECT TO MANAGE THINGS AROUND THE HOUSE.
 THIS APPLICATION IS MEANT TO BE RUN LOCALLY ON A PERSONAL NETWORK, UTILIZING A DOCKER CONTAINER AND/OR A RASPBERRY PI WITH NO ACCESS ALLOWED FROM OUTSIDE YOUR PERSONAL NETWORK.
 PLEASE DO NOT SPIN THIS UP AND ALLOW ANYONE ON THE INTERNET TO ACCESS IT.
 
-# MGMT — Personal homescreen dashboard
+# MGMT - Personal homescreen dashboard
 
 Chores, calendar, and (eventually) finances. Runs as a Docker container on a Raspberry Pi.
 
@@ -37,8 +37,8 @@ When you open the app for the first time (or after a full reset), you are
 automatically redirected to the setup wizard at `/setup.html`. It walks you
 through two steps:
 
-1. **Create a 4-digit admin PIN** — protects the admin settings page
-2. **Paste your Google Calendar embed URL** (optional — can be skipped and set later)
+1. **Create a 4-digit admin PIN** - protects the admin settings page
+2. **Paste your Google Calendar embed URL** (optional - can be skipped and set later)
 
 After setup completes you land on the main dashboard. The setup page will not
 appear again unless you reset the app.
@@ -46,6 +46,8 @@ appear again unless you reset the app.
 To get your Google Calendar embed URL:
 Google Calendar → Settings (⚙) → click your calendar name →
 "Integrate calendar" → copy the `src="…"` value from the Embed Code block.
+
+**Please note that whatever Google Calendar you embed here will need to be public, or you can try to add OAuth to this before I get to it. Next test for me will be to find out if OAuth will work to get a private Google Calendar up here. There is currently no way to combine all Google Calendars into one view to get a URL, presumably because this is what the homepage of Google Calendar does. With OAuth and an iframe to that homepage, this feature may work better.**
 
 ---
 
@@ -92,9 +94,9 @@ with no extra configuration.
 Navigate to the admin page by clicking **Login** on the dashboard and entering
 your 4-digit PIN. From there you can:
 
-- **Settings** — update the Google Calendar embed URL or change the admin PIN
-- **Add/Remove Chores** — manage individual tasks or bulk-import from a `.txt` file
-- **Danger Zone** — reset everything (see below)
+- **Settings** - update the Google Calendar embed URL or change the admin PIN
+- **Add/Remove Chores** - manage individual tasks or bulk-import from a `.txt` file
+- **Danger Zone** - reset everything (see below)
 
 ---
 
@@ -132,15 +134,15 @@ files in `data/chores/`, then restart the server.
 |--------|------|-------------|
 | GET | `/api/chores` | All chores grouped by reset type |
 | GET | `/api/chores/:type` | Chores for one type |
-| POST | `/api/chores/:type` | Add a chore — `{ "text": "…" }` |
-| DELETE | `/api/chores/:type/by-text` | Remove by text — `{ "text": "…" }` |
+| POST | `/api/chores/:type` | Add a chore - `{ "text": "…" }` |
+| DELETE | `/api/chores/:type/by-text` | Remove by text - `{ "text": "…" }` |
 | DELETE | `/api/chores/:type/:index` | Remove by line index (0-based) |
 | GET | `/api/calendar-url` | Get calendar URL from config.json |
-| POST | `/api/calendar-url` | Save calendar URL — `{ "url": "…" }` |
+| POST | `/api/calendar-url` | Save calendar URL - `{ "url": "…" }` |
 | GET | `/api/pin/exists` | Returns `{ "exists": bool }` |
-| POST | `/api/pin/verify` | Verify PIN — `{ "hash": "<sha256 hex>" }` → `{ "valid": bool }` |
-| POST | `/api/pin` | Set new PIN — `{ "hash": "<sha256 hex>" }` |
+| POST | `/api/pin/verify` | Verify PIN - `{ "hash": "<sha256 hex>" }` → `{ "valid": bool }` |
+| POST | `/api/pin` | Set new PIN - `{ "hash": "<sha256 hex>" }` |
 | POST | `/api/reset` | Wipe all data and return to first-time setup state |
 
-The PIN is never transmitted as plaintext — the browser hashes it with SHA-256
+The PIN is never transmitted as plaintext, the browser hashes it with SHA-256
 and only the hash is sent to and stored by the server.
