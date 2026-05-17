@@ -2,7 +2,8 @@
 //
 // Chores are stored in server-side .txt files (data/chores/daily.txt etc.)
 // The admin PIN hash is stored in data/config.json via POST /api/pin.
-// No PIN data of any kind is kept in localStorage.
+// The verified PIN hash is kept in sessionStorage for the duration of the session
+// and removed automatically when the user leaves the page (pagehide).
 
 // ---------------------------------------------------------------------------
 // SHA-256 helper — no plain-text PIN is ever stored or transmitted
@@ -15,16 +16,36 @@ async function sha256(str) {
         .join('');
 }
 
+// ---------------------------------------------------------------------------
+// Authenticated fetch — attaches the session PIN hash to every request.
+// Uses _fetch (a stable alias to window.fetch) so that replacing all fetch(
+// calls in this file with adminFetch( does not create infinite recursion here.
+// Redirects to index.html on 401/403 (invalid or expired session).
+// ---------------------------------------------------------------------------
+const _fetch = window.fetch.bind(window);
+async function adminFetch(url, options = {}) {
+    const hash = sessionStorage.getItem('adminPinHash') || '';
+    const headers = { ...options.headers };
+    if (hash) headers['X-Admin-Pin-Hash'] = hash;
+    const resp = await _fetch(url, { ...options, headers });
+    if (resp.status === 401 || resp.status === 403) {
+        sessionStorage.removeItem('adminPinHash');
+        window.location.replace('index.html');
+    }
+    return resp;
+}
+
 async function setAdminPin(pin) {
     if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly 4 digits.');
     const hash = await sha256(pin);
-    const resp = await fetch('/api/pin', {
+    const resp = await adminFetch('/api/pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hash }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Failed to save PIN.');
+    return hash;
 }
 
 // ---------------------------------------------------------------------------
@@ -32,14 +53,14 @@ async function setAdminPin(pin) {
 // ---------------------------------------------------------------------------
 
 async function fetchAllChores() {
-    const resp = await fetch('/api/chores');
+    const resp = await adminFetch('/api/chores');
     if (!resp.ok) throw new Error(`Failed to load chores (${resp.status})`);
     return resp.json();
 }
 
 async function addChoreToServer(text, resetType) {
     if (!text || !text.trim()) throw new Error('Chore text is required.');
-    const resp = await fetch(`/api/chores/${resetType}`, {
+    const resp = await adminFetch(`/api/chores/${resetType}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.trim() }),
@@ -50,7 +71,7 @@ async function addChoreToServer(text, resetType) {
 }
 
 async function removeChoreFromServer(text, resetType) {
-    const resp = await fetch(`/api/chores/${resetType}/by-text`, {
+    const resp = await adminFetch(`/api/chores/${resetType}/by-text`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -131,7 +152,7 @@ async function loadCalendarUrl() {
     const input = document.getElementById('calendarUrlInput');
     if (!input) return;
     try {
-        const resp = await fetch('/api/calendar-url');
+        const resp = await adminFetch('/api/calendar-url');
         if (!resp.ok) return;
         const { url } = await resp.json();
         if (url) input.value = url;
@@ -142,7 +163,7 @@ async function saveCalendarUrl(url) {
     if (!url || !url.startsWith('https://calendar.google.com/')) {
         throw new Error('Must be a valid Google Calendar embed URL (https://calendar.google.com/…)');
     }
-    const resp = await fetch('/api/calendar-url', {
+    const resp = await adminFetch('/api/calendar-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
@@ -166,6 +187,11 @@ function showMsg(el, msg, ok = true) {
 // DOMContentLoaded — wire all UI
 // ---------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', function () {
+
+    if (!sessionStorage.getItem('adminPinHash')) {
+        window.location.replace('index.html');
+        return;
+    }
 
     // ---- Add single chore ----
     const addChoreBtn      = document.getElementById('addChoreBtn');
@@ -203,7 +229,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     setAdminPinBtn.addEventListener('click', async function () {
         try {
-            await setAdminPin(adminPinInput.value.trim());
+            const newHash = await setAdminPin(adminPinInput.value.trim());
+            sessionStorage.setItem('adminPinHash', newHash);
             showMsg(adminPinMessage, 'Admin PIN set successfully.');
             adminPinInput.value = '';
         } catch (err) {
@@ -281,7 +308,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             resetBtn.disabled = true;
             try {
-                const resp = await fetch('/api/reset', { method: 'POST' });
+                const resp = await adminFetch('/api/reset', { method: 'POST' });
                 if (!resp.ok) throw new Error('Server error during reset.');
                 showMsg(resetMessage, 'Reset complete. Redirecting to setup…');
                 setTimeout(() => { window.location.href = 'setup.html'; }, 1500);
@@ -292,6 +319,30 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // ---- Logout ----
+    const logoutButton = document.getElementById('logoutButton');
+    if (logoutButton) {
+        logoutButton.addEventListener('click', function () {
+            sessionStorage.removeItem('adminPinHash');
+            window.location.replace('index.html');
+        });
+    }
+
     // ---- Initial render ----
     renderChoreList();
+});
+
+// Clear the session hash whenever the page is hidden or unloaded (back button,
+// tab close, navigate away). pagehide is more reliable than beforeunload and
+// also fires when the browser puts the page in the back-forward cache.
+window.addEventListener('pagehide', function () {
+    sessionStorage.removeItem('adminPinHash');
+});
+
+// When the browser restores admin.html from the bfcache (user pressed back
+// then forward), DOMContentLoaded does not re-fire — check auth here instead.
+window.addEventListener('pageshow', function (e) {
+    if (e.persisted && !sessionStorage.getItem('adminPinHash')) {
+        window.location.replace('index.html');
+    }
 });

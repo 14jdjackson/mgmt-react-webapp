@@ -67,6 +67,19 @@ function writeConfig(patch) {
 }
 
 // ---------------------------------------------------------------------------
+// Admin auth middleware — checks X-Admin-Pin-Hash header on mutating routes
+// ---------------------------------------------------------------------------
+function requireAdminPin(req, res, next) {
+    const hash = (req.headers['x-admin-pin-hash'] || '').trim().toLowerCase();
+    if (!hash) return res.status(401).json({ error: 'Admin PIN required.' });
+    const { adminPinHash } = readConfig();
+    if (!adminPinHash || hash !== adminPinHash) {
+        return res.status(403).json({ error: 'Invalid admin PIN.' });
+    }
+    next();
+}
+
+// ---------------------------------------------------------------------------
 // Chore file helpers
 // ---------------------------------------------------------------------------
 function choreFilePath(resetType) {
@@ -116,7 +129,7 @@ app.get('/api/chores/:type', (req, res) => {
 });
 
 // POST /api/chores/:type — add a chore   body: { "text": "..." }
-app.post('/api/chores/:type', (req, res) => {
+app.post('/api/chores/:type', requireAdminPin, (req, res) => {
     const { type } = req.params;
     if (!VALID_TYPES.has(type)) {
         return res.status(400).json({ error: `Invalid reset type '${type}'.` });
@@ -135,7 +148,7 @@ app.post('/api/chores/:type', (req, res) => {
 });
 
 // DELETE /api/chores/:type/by-text — remove by text   body: { "text": "..." }
-app.delete('/api/chores/:type/by-text', (req, res) => {
+app.delete('/api/chores/:type/by-text', requireAdminPin, (req, res) => {
     const { type } = req.params;
     if (!VALID_TYPES.has(type)) {
         return res.status(400).json({ error: `Invalid reset type '${type}'.` });
@@ -154,7 +167,7 @@ app.delete('/api/chores/:type/by-text', (req, res) => {
 });
 
 // DELETE /api/chores/:type/:index — remove by line index (0-based)
-app.delete('/api/chores/:type/:index', (req, res) => {
+app.delete('/api/chores/:type/:index', requireAdminPin, (req, res) => {
     const { type } = req.params;
     const index = parseInt(req.params.index, 10);
     if (!VALID_TYPES.has(type)) {
@@ -185,7 +198,7 @@ app.get('/api/calendar-url', (req, res) => {
     res.json({ url: config.calendarUrl || '' });
 });
 
-app.post('/api/calendar-url', (req, res) => {
+app.post('/api/calendar-url', requireAdminPin, (req, res) => {
     const url = (req.body.url || '').trim();
     if (!url) {
         return res.status(400).json({ error: "'url' is required." });
@@ -223,7 +236,7 @@ app.post('/api/pin/verify', (req, res) => {
     res.json({ valid: Boolean(adminPinHash) && hash === adminPinHash });
 });
 
-app.post('/api/pin', (req, res) => {
+app.post('/api/pin', requireAdminPin, (req, res) => {
     const hash = (req.body.hash || '').trim().toLowerCase();
     // Expect a 64-character hex string (SHA-256 output)
     if (!/^[0-9a-f]{64}$/.test(hash)) {
@@ -239,7 +252,7 @@ app.post('/api/pin', (req, res) => {
 // POST /api/reset — wipes all configuration and chore data so the app returns
 //                   to a "first-time setup" state.
 // ---------------------------------------------------------------------------
-app.post('/api/reset', (req, res) => {
+app.post('/api/reset', requireAdminPin, (req, res) => {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify({
         calendarUrl:  '',
         adminPinHash: ''

@@ -37,7 +37,7 @@ async function checkPin(code) {
         body: JSON.stringify({ hash }),
     });
     const { valid } = await resp.json();
-    return valid;
+    return valid ? hash : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,7 +193,9 @@ async function askAdminPin() {
         alert('Please enter a valid 4-digit PIN.');
         return;
     }
-    if (await checkPin(code)) {
+    const hash = await checkPin(code);
+    if (hash) {
+        sessionStorage.setItem('adminPinHash', hash);
         window.location.href = 'admin.html';
     } else {
         alert('Wrong PIN. Access denied.');
