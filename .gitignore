@@ -1,0 +1,10 @@
+# Runtime data — contains sensitive config (PIN hash, OAuth tokens, credentials)
+data/
+src/data/
+
+# Dependencies
+src/node_modules/
+
+# Environment variables
+.env
+.env.local

@@ -30,10 +30,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     const pinError   = document.getElementById('pinError');
     const pinNextBtn = document.getElementById('pinNextBtn');
 
-    const calendarInput = document.getElementById('calendarInput');
-    const calendarError = document.getElementById('calendarError');
-    const calSkipBtn    = document.getElementById('calSkipBtn');
-    const calSaveBtn    = document.getElementById('calSaveBtn');
+    const clientIdInput     = document.getElementById('clientIdInput');
+    const clientSecretInput = document.getElementById('clientSecretInput');
+    const credsError        = document.getElementById('credsError');
+    const credsSkipBtn      = document.getElementById('credsSkipBtn');
+    const credsSaveBtn      = document.getElementById('credsSaveBtn');
+
+    // PIN hash is stored here after step 1 so step 2 can authenticate its request.
+    let pinHash = '';
 
     // ---- Step 1: PIN ----
 
@@ -62,14 +66,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         try {
             const hash = await sha256(pin);
             const resp = await fetch('/api/pin', {
-                method: 'POST',
+                method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hash }),
+                body:    JSON.stringify({ hash }),
             });
             if (!resp.ok) {
                 const data = await resp.json();
                 throw new Error(data.error || 'Failed to save PIN.');
             }
+            pinHash = hash;
             step1.classList.remove('active');
             step2.classList.add('active');
         } catch (err) {
@@ -78,55 +83,57 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     });
 
-    // Allow Enter key to advance
     [pinInput, pinConfirm].forEach(el => {
         el.addEventListener('keydown', e => { if (e.key === 'Enter') pinNextBtn.click(); });
     });
 
-    // ---- Step 2: Calendar URL ----
+    // ---- Step 2: Google credentials ----
 
-    async function finishSetup() {
+    function finishSetup() {
         step2.classList.remove('active');
         stepDone.classList.add('active');
         setTimeout(() => { window.location.href = 'index.html'; }, 1500);
     }
 
-    calSkipBtn.addEventListener('click', finishSetup);
+    credsSkipBtn.addEventListener('click', finishSetup);
 
-    calSaveBtn.addEventListener('click', async function () {
-        calendarError.style.display = 'none';
-        const url = calendarInput.value.trim();
+    credsSaveBtn.addEventListener('click', async function () {
+        credsError.style.display = 'none';
+        const clientId     = clientIdInput.value.trim();
+        const clientSecret = clientSecretInput.value.trim();
 
-        if (!url) {
-            await finishSetup();
+        if (!clientId && !clientSecret) {
+            finishSetup();
             return;
         }
-        if (!url.startsWith('https://calendar.google.com/')) {
-            calendarError.textContent = 'Must be a Google Calendar embed URL (https://calendar.google.com/…)';
-            calendarError.style.display = 'block';
+        if (!clientId || !clientSecret) {
+            credsError.textContent = 'Enter both the Client ID and Client Secret, or skip.';
+            credsError.style.display = 'block';
             return;
         }
 
-        calSaveBtn.disabled = true;
-        calSkipBtn.disabled = true;
+        credsSaveBtn.disabled = true;
+        credsSkipBtn.disabled = true;
         try {
-            const resp = await fetch('/api/calendar-url', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url }),
+            const resp = await fetch('/api/auth/google/credentials', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Admin-Pin-Hash': pinHash },
+                body:    JSON.stringify({ clientId, clientSecret }),
             });
             if (!resp.ok) {
                 const data = await resp.json();
-                throw new Error(data.error || 'Failed to save calendar URL.');
+                throw new Error(data.error || 'Failed to save credentials.');
             }
-            await finishSetup();
+            finishSetup();
         } catch (err) {
-            calendarError.textContent = err.message;
-            calendarError.style.display = 'block';
-            calSaveBtn.disabled = false;
-            calSkipBtn.disabled = false;
+            credsError.textContent = err.message;
+            credsError.style.display = 'block';
+            credsSaveBtn.disabled = false;
+            credsSkipBtn.disabled = false;
         }
     });
 
-    calendarInput.addEventListener('keydown', e => { if (e.key === 'Enter') calSaveBtn.click(); });
+    [clientIdInput, clientSecretInput].forEach(el => {
+        el.addEventListener('keydown', e => { if (e.key === 'Enter') credsSaveBtn.click(); });
+    });
 });

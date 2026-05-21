@@ -83,23 +83,32 @@
             </div>
         </div>
 
-        <!-- Step 2: Calendar -->
+        <!-- Step 2: Google credentials -->
         <div id="step2" class="step">
             <div class="step-indicator">Step 2 of 2</div>
             <h2>Google Calendar (optional)</h2>
             <p>
-                Paste your Google Calendar embed URL. To find it: open Google Calendar →
-                Settings → click a calendar → "Integrate calendar" → copy the embed URL
-                from the iframe src attribute.
+                To display a private Google Calendar, enter your OAuth credentials below.
+                You can skip this now and add them later from the admin page.
+            </p>
+            <p style="color:#888;font-size:0.82rem;line-height:1.6;margin-bottom:14px;">
+                In <strong>Google Cloud Console</strong>: create a project → enable the
+                <strong>Google Calendar API</strong> → Credentials → Create OAuth 2.0 Client ID
+                → App type: <strong>TV and Limited Input devices</strong>.
+                Copy the Client ID and Client Secret from the result screen.
             </p>
             <div class="field">
-                <label for="calendarInput">Embed URL</label>
-                <input type="text" id="calendarInput" placeholder="https://calendar.google.com/calendar/embed?..." />
+                <label for="clientIdInput">Client ID</label>
+                <input type="text" id="clientIdInput" placeholder="123456789-abc….apps.googleusercontent.com" autocomplete="off" />
             </div>
-            <p id="calendarError" class="error"></p>
+            <div class="field">
+                <label for="clientSecretInput">Client Secret</label>
+                <input type="password" id="clientSecretInput" placeholder="GOCSPX-…" autocomplete="new-password" />
+            </div>
+            <p id="credsError" class="error"></p>
             <div class="btn-row">
-                <button id="calSkipBtn">Skip for now</button>
-                <button id="calSaveBtn" class="primary">Save &amp; Finish</button>
+                <button id="credsSkipBtn">Skip for now</button>
+                <button id="credsSaveBtn" class="primary">Save &amp; Finish</button>
             </div>
         </div>
 

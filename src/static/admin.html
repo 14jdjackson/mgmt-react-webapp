@@ -20,13 +20,59 @@
     <div id="Settings">
         <h2>Settings</h2>
 
-        <h3>Google Calendar embed URL</h3>
-        <p style="color:#aaa;font-size:0.85rem;margin-bottom:6px;">
-            In Google Calendar → Settings → share calendar → paste the "Embed code" src URL here.
-        </p>
-        <input type="text" id="calendarUrlInput" style="width:100%;max-width:700px;" placeholder="https://calendar.google.com/calendar/embed?..." />
-        <button id="saveCalendarUrlBtn" style="margin-left:8px;">Save URL</button>
-        <p id="calendarUrlMessage" style="display:none;"></p>
+        <h3>Google Calendar</h3>
+
+        <div id="googleCredsSection" style="margin-bottom:14px;">
+            <p style="color:#aaa;font-size:0.85rem;margin-bottom:8px;">
+                OAuth credentials from your Google Cloud project. If
+                <code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code> env vars
+                are set they take priority over values saved here.
+            </p>
+            <div id="googleCredsStatus" style="font-size:0.85rem;color:#aaa;margin-bottom:8px;">Checking…</div>
+            <div id="googleCredsForm" style="display:none;">
+                <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+                    <div>
+                        <label for="adminClientIdInput" style="display:block;font-size:0.8rem;color:#ccc;margin-bottom:3px;">Client ID</label>
+                        <input type="text" id="adminClientIdInput" style="width:340px;" placeholder="123456789-abc….apps.googleusercontent.com" autocomplete="off" />
+                    </div>
+                    <div>
+                        <label for="adminClientSecretInput" style="display:block;font-size:0.8rem;color:#ccc;margin-bottom:3px;">Client Secret</label>
+                        <input type="password" id="adminClientSecretInput" style="width:200px;" placeholder="GOCSPX-…" autocomplete="new-password" />
+                    </div>
+                    <button id="saveCredsBtn">Save credentials</button>
+                </div>
+                <p id="credsMessage" style="display:none;font-size:0.85rem;margin-top:6px;"></p>
+            </div>
+        </div>
+
+        <div id="googleOAuthSection">
+            <p style="color:#aaa;font-size:0.85rem;margin-bottom:8px;">
+                Connect your Google Account to display private calendar events.
+            </p>
+            <div id="googleAuthStatus" style="margin-bottom:8px;color:#aaa;">Checking…</div>
+            <button id="googleConnectBtn" style="display:none;">Connect Google Calendar</button>
+            <button id="googleDisconnectBtn" style="display:none;background-color:#5a1a1a;color:#f5f5f5;border:1px solid #e57373;border-radius:4px;padding:6px 12px;cursor:pointer;">Disconnect</button>
+
+            <div id="googleCalendarSelect" style="display:none;margin-top:12px;">
+                <label for="calendarSelect">Calendar to display:</label>
+                <select id="calendarSelect" style="margin-left:8px;min-width:240px;"></select>
+                <button id="saveCalendarBtn" style="margin-left:8px;">Use this calendar</button>
+                <p id="calendarSelectMsg" style="display:none;font-size:0.9rem;"></p>
+            </div>
+        </div>
+
+        <details style="margin-top:14px;">
+            <summary style="color:#888;font-size:0.85rem;cursor:pointer;">Use embed URL instead (public calendars only)</summary>
+            <div style="margin-top:8px;">
+                <p style="color:#aaa;font-size:0.85rem;margin-bottom:6px;">
+                    In Google Calendar → Settings → share calendar → paste the "Embed code" src URL here.
+                    Only used when no Google Account is connected above.
+                </p>
+                <input type="text" id="calendarUrlInput" style="width:100%;max-width:700px;" placeholder="https://calendar.google.com/calendar/embed?..." />
+                <button id="saveCalendarUrlBtn" style="margin-left:8px;">Save URL</button>
+                <p id="calendarUrlMessage" style="display:none;"></p>
+            </div>
+        </details>
 
         <hr style="border-color:#333;margin:16px 0;" />
 

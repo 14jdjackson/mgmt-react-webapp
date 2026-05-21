@@ -22,9 +22,19 @@
 const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
+const { google } = require('googleapis');
 
 const app     = express();
 const PORT    = parseInt(process.env.PORT || '3000', 10);
+// Google credentials: config.json values are used when env vars are not set.
+// Env vars always take precedence so existing deployments aren't broken.
+function getGoogleCreds() {
+    const cfg = readConfig();
+    return {
+        clientId:     process.env.GOOGLE_CLIENT_ID     || cfg.googleClientId     || '',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET || cfg.googleClientSecret || '',
+    };
+}
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const CHORES_DIR = path.join(DATA_DIR, 'chores');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -247,6 +257,259 @@ app.post('/api/pin', requireAdminPin, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Google Calendar — Device Authorization Flow
+//
+// Uses OAuth 2.0 for devices (RFC 8628). No redirect URI required — works on
+// any hostname or IP address. The OAuth app type in Google Cloud Console must
+// be "TV and Limited Input devices" (or Desktop app).
+//
+// Flow:
+//   1. Admin POSTs /api/auth/google/device/start  ->  server gets a user_code
+//      from Google and returns it to the admin page.
+//   2. Admin visits google.com/device and enters the short code shown on screen.
+//   3. Admin page polls GET /api/auth/google/device/poll every few seconds.
+//   4. Once the admin approves in their browser, the poll returns 'approved'
+//      and the server stores the refresh token in config.json.
+//
+// GET    /api/auth/google/status         -- connection state (no auth needed)
+// GET    /api/auth/google/credentials    -- masked cred info  (admin PIN)
+// POST   /api/auth/google/credentials    -- save client ID/secret (admin PIN)
+// POST   /api/auth/google/device/start   -- begin device flow (admin PIN)
+// GET    /api/auth/google/device/poll    -- check approval   (admin PIN)
+// DELETE /api/auth/google                -- disconnect        (admin PIN)
+// GET    /api/auth/google/calendars      -- list calendars    (admin PIN)
+// POST   /api/auth/google/calendar       -- pick calendar     (admin PIN)
+// GET    /api/calendar/events            -- fetch events      (public)
+// ---------------------------------------------------------------------------
+
+function makeOAuth2Client() {
+    const { clientId, clientSecret } = getGoogleCreds();
+    return new google.auth.OAuth2(clientId, clientSecret);
+}
+
+// Raw HTTPS POST helper for Google token endpoints (no extra dependencies)
+function googlePost(endpoint, params) {
+    return new Promise((resolve, reject) => {
+        const body    = new URLSearchParams(params).toString();
+        const url     = new URL(endpoint);
+        const options = {
+            hostname: url.hostname,
+            path:     url.pathname,
+            method:   'POST',
+            headers:  {
+                'Content-Type':   'application/x-www-form-urlencoded',
+                'Content-Length': Buffer.byteLength(body),
+            },
+        };
+        const req = require('https').request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(new Error('Invalid JSON from Google')); }
+            });
+        });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
+
+// In-memory state for the pending device authorisation (one at a time)
+let pendingDeviceAuth = null;
+
+// GET /api/auth/google/credentials — tells the admin whether credentials are
+// set and where they came from, without exposing the secret itself.
+app.get('/api/auth/google/credentials', requireAdminPin, (req, res) => {
+    const cfg      = readConfig();
+    const fromEnv  = Boolean(process.env.GOOGLE_CLIENT_ID);
+    const clientId = process.env.GOOGLE_CLIENT_ID || cfg.googleClientId || '';
+    res.json({
+        source:      fromEnv ? 'env' : (clientId ? 'config' : 'none'),
+        clientIdSet: Boolean(clientId),
+        clientIdHint: clientId ? clientId.slice(0, 14) + '…' : '',
+    });
+});
+
+// POST /api/auth/google/credentials — save client ID + secret to config.json.
+// Ignored at runtime if the corresponding env vars are set (env takes priority).
+app.post('/api/auth/google/credentials', requireAdminPin, (req, res) => {
+    const clientId     = (req.body.clientId     || '').trim();
+    const clientSecret = (req.body.clientSecret || '').trim();
+    if (!clientId || !clientSecret) {
+        return res.status(400).json({ error: 'Both clientId and clientSecret are required.' });
+    }
+    writeConfig({ googleClientId: clientId, googleClientSecret: clientSecret });
+    res.json({ status: 'saved' });
+});
+
+app.get('/api/auth/google/status', (req, res) => {
+    const config = readConfig();
+    const { clientId, clientSecret } = getGoogleCreds();
+    res.json({
+        connected:             Boolean(config.googleRefreshToken),
+        email:                 config.googleEmail           || null,
+        calendarId:            config.googleCalendarId      || null,
+        calendarSummary:       config.googleCalendarSummary || null,
+        credentialsConfigured: Boolean(clientId && clientSecret),
+    });
+});
+
+app.post('/api/auth/google/device/start', requireAdminPin, async (req, res) => {
+    const { clientId, clientSecret } = getGoogleCreds();
+    if (!clientId || !clientSecret) {
+        return res.status(500).json({ error: 'Google credentials not configured. Add your Client ID and Secret in admin settings.' });
+    }
+    try {
+        const data = await googlePost('https://oauth2.googleapis.com/device/code', {
+            client_id: clientId,
+            scope:     'https://www.googleapis.com/auth/calendar.readonly',
+        });
+        if (data.error) throw new Error(data.error_description || data.error);
+
+        pendingDeviceAuth = {
+            deviceCode:      data.device_code,
+            userCode:        data.user_code,
+            verificationUrl: data.verification_url,
+            expiresAt:       Date.now() + data.expires_in * 1000,
+            interval:        data.interval || 5,
+        };
+
+        res.json({
+            userCode:        data.user_code,
+            verificationUrl: data.verification_url,
+            expiresIn:       data.expires_in,
+            interval:        data.interval || 5,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/auth/google/device/poll', requireAdminPin, async (req, res) => {
+    if (!pendingDeviceAuth) {
+        return res.status(400).json({ status: 'error', message: 'No pending device auth. Start the flow again.' });
+    }
+    if (Date.now() > pendingDeviceAuth.expiresAt) {
+        pendingDeviceAuth = null;
+        return res.json({ status: 'expired' });
+    }
+    try {
+        const { clientId, clientSecret } = getGoogleCreds();
+        const data = await googlePost('https://oauth2.googleapis.com/token', {
+            client_id:     clientId,
+            client_secret: clientSecret,
+            device_code:   pendingDeviceAuth.deviceCode,
+            grant_type:    'urn:ietf:params:oauth:grant-type:device_code',
+        });
+
+        if (data.error) {
+            if (data.error === 'authorization_pending') return res.json({ status: 'pending' });
+            if (data.error === 'slow_down') {
+                pendingDeviceAuth.interval += 5;
+                return res.json({ status: 'pending', interval: pendingDeviceAuth.interval });
+            }
+            pendingDeviceAuth = null;
+            return res.json({ status: 'error', message: data.error_description || data.error });
+        }
+
+        // Approved — store tokens and fetch the account email for display
+        const config = readConfig();
+        writeConfig({ googleRefreshToken: data.refresh_token || config.googleRefreshToken });
+
+        try {
+            const auth = makeOAuth2Client();
+            auth.setCredentials({ access_token: data.access_token });
+            const oauth2         = google.oauth2({ version: 'v2', auth });
+            const { data: user } = await oauth2.userinfo.get();
+            writeConfig({ googleEmail: user.email });
+        } catch (_) { /* email is cosmetic */ }
+
+        pendingDeviceAuth = null;
+        res.json({ status: 'approved' });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+app.delete('/api/auth/google', requireAdminPin, (req, res) => {
+    pendingDeviceAuth = null;
+    writeConfig({
+        googleRefreshToken:    '',
+        googleEmail:           '',
+        googleCalendarId:      '',
+        googleCalendarSummary: '',
+    });
+    res.json({ status: 'disconnected' });
+});
+
+app.get('/api/auth/google/calendars', requireAdminPin, async (req, res) => {
+    const config = readConfig();
+    if (!config.googleRefreshToken) {
+        return res.status(401).json({ error: 'Not connected to Google Calendar.' });
+    }
+    try {
+        const auth = makeOAuth2Client();
+        auth.setCredentials({ refresh_token: config.googleRefreshToken });
+
+        const calendar = google.calendar({ version: 'v3', auth });
+        const { data } = await calendar.calendarList.list();
+        res.json((data.items || []).map(c => ({
+            id:      c.id,
+            summary: c.summary,
+            primary: Boolean(c.primary),
+        })));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/auth/google/calendar', requireAdminPin, (req, res) => {
+    const { calendarId, calendarSummary } = req.body;
+    if (!calendarId) return res.status(400).json({ error: "'calendarId' is required." });
+    writeConfig({ googleCalendarId: calendarId, googleCalendarSummary: calendarSummary || '' });
+    res.json({ status: 'saved', calendarId });
+});
+
+// GET /api/calendar/events
+// Unified endpoint: returns OAuth events when connected, falls back to
+// { source: 'iframe', url } when only an embed URL is configured.
+app.get('/api/calendar/events', async (req, res) => {
+    const config = readConfig();
+
+    const { clientId: gcid, clientSecret: gcsec } = getGoogleCreds();
+    if (config.googleRefreshToken && config.googleCalendarId && gcid && gcsec) {
+        try {
+            const auth = makeOAuth2Client();
+            auth.setCredentials({ refresh_token: config.googleRefreshToken });
+
+            const calendar = google.calendar({ version: 'v3', auth });
+            const now      = new Date();
+            const twoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+            const { data } = await calendar.events.list({
+                calendarId:   config.googleCalendarId,
+                timeMin:      now.toISOString(),
+                timeMax:      twoWeeks.toISOString(),
+                singleEvents: true,
+                orderBy:      'startTime',
+                maxResults:   30,
+            });
+
+            return res.json({ source: 'oauth', events: data.items || [] });
+        } catch (err) {
+            return res.status(500).json({ error: err.message });
+        }
+    }
+
+    if (config.calendarUrl) {
+        return res.json({ source: 'iframe', url: config.calendarUrl });
+    }
+
+    res.json({ source: 'none', events: [] });
+});
+
+// ---------------------------------------------------------------------------
 // Reset API
 //
 // POST /api/reset — wipes all configuration and chore data so the app returns
@@ -254,8 +517,14 @@ app.post('/api/pin', requireAdminPin, (req, res) => {
 // ---------------------------------------------------------------------------
 app.post('/api/reset', requireAdminPin, (req, res) => {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify({
-        calendarUrl:  '',
-        adminPinHash: ''
+        calendarUrl:           '',
+        adminPinHash:          '',
+        googleClientId:        '',
+        googleClientSecret:    '',
+        googleRefreshToken:    '',
+        googleEmail:           '',
+        googleCalendarId:      '',
+        googleCalendarSummary: '',
     }, null, 2), 'utf8');
 
     for (const type of VALID_TYPES) {

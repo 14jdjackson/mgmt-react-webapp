@@ -146,27 +146,90 @@ function scheduleDailyReset() {
 }
 
 // ---------------------------------------------------------------------------
-// Calendar iframe
-// URL comes exclusively from GET /api/calendar-url which reads data/config.json.
-// No localStorage fallback — the config file is the single source of truth.
+// Calendar — events list (OAuth) or iframe fallback
+// Calls GET /api/calendar/events which returns one of:
+//   { source: 'oauth', events: [...] }  — render events list
+//   { source: 'iframe', url: '...' }    — show embed iframe
+//   { source: 'none' }                  — hide section
 // ---------------------------------------------------------------------------
+function formatEventTime(event) {
+    if (event.start.date) return 'All day';
+    const t = new Date(event.start.dateTime);
+    return t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function dayLabel(isoDate) {
+    const today    = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    if (isoDate === today)    return 'TODAY';
+    if (isoDate === tomorrow) return 'TOMORROW';
+    return new Date(isoDate + 'T00:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+}
+
+function renderEvents(events) {
+    const list = document.getElementById('eventsList');
+    if (!list) return;
+    list.innerHTML  = '';
+    list.style.display = 'block';
+
+    if (!events || events.length === 0) {
+        const li = document.createElement('li');
+        li.style.color = '#aaa';
+        li.textContent = 'No upcoming events in the next 2 weeks.';
+        list.appendChild(li);
+        return;
+    }
+
+    const days = {};
+    for (const ev of events) {
+        const key = (ev.start.dateTime || ev.start.date).slice(0, 10);
+        if (!days[key]) days[key] = [];
+        days[key].push(ev);
+    }
+
+    for (const [day, dayEvents] of Object.entries(days)) {
+        const header = document.createElement('li');
+        header.style.cssText = 'font-weight:bold;color:#888;margin-top:10px;font-size:0.8rem;letter-spacing:0.05em;';
+        header.textContent   = dayLabel(day);
+        list.appendChild(header);
+
+        for (const ev of dayEvents) {
+            const li = document.createElement('li');
+            li.style.cssText = 'display:flex;gap:10px;padding:4px 0 4px 10px;border-left:2px solid #444;margin:3px 0;';
+
+            const time = document.createElement('span');
+            time.style.cssText = 'color:#888;font-size:0.85rem;min-width:52px;flex-shrink:0;';
+            time.textContent   = formatEventTime(ev);
+
+            const title = document.createElement('span');
+            title.textContent = ev.summary || '(no title)';
+
+            li.appendChild(time);
+            li.appendChild(title);
+            list.appendChild(li);
+        }
+    }
+}
+
 async function initCalendar() {
-    const iframe = document.querySelector('#calendarDiv iframe');
-    if (!iframe) return;
+    const calDiv = document.getElementById('calendarDiv');
+    if (!calDiv) return;
 
     try {
-        const resp = await fetch('/api/calendar-url');
-        if (!resp.ok) return;
-        const { url } = await resp.json();
-        if (url) {
-            iframe.src = url;
+        const resp = await fetch('/api/calendar/events');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        if (data.source === 'oauth') {
+            renderEvents(data.events);
+        } else if (data.source === 'iframe' && data.url) {
+            const iframe = document.getElementById('calendarIframe');
+            if (iframe) { iframe.src = data.url; iframe.style.display = ''; }
         } else {
-            const calDiv = document.getElementById('calendarDiv');
-            if (calDiv) calDiv.style.display = 'none';
+            calDiv.style.display = 'none';
         }
     } catch (_) {
-        const calDiv = document.getElementById('calendarDiv');
-        if (calDiv) calDiv.style.display = 'none';
+        calDiv.style.display = 'none';
     }
 }
 
