@@ -8,3 +8,4 @@ src/node_modules/
 # Environment variables
 .env
 .env.local
+files.zip
