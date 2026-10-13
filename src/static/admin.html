@@ -6,7 +6,7 @@
         #topbar { background-color: #1f1f1f; border-bottom: 1px solid #333; }
         #backButton { background-color: #333; color: #f5f5f5; border: 1px solid #555; border-radius: 4px; padding: 6px 12px; cursor: pointer; margin-right: 10px; }
         #backButton:hover { background-color: #444; }
-        #choreAdmin, #Settings, #spendingDiv { background-color: #1b1b1b; border: 1px solid #333; margin: 10px; padding: 10px; }
+        #choreAdmin, #Settings, #spendingDiv, #bountyAdmin { background-color: #1b1b1b; border: 1px solid #333; margin: 10px; padding: 10px; }
         input, select, button { color: #f5f5f5; background-color: #222; border: 1px solid #555; }
         label { color: #e2e2e2; }
     </style>
@@ -114,10 +114,31 @@
         <button id="importChoreBtn">Import chores</button>
         <p id="importMessage" style="color:green;display:none;"></p>
     </div>
+    <div id="bountyAdmin">
+        <h2>Bounty Board</h2>
+        <p style="color:#aaa;font-size:0.85rem;margin-bottom:8px;">
+            Post a one-off task with an extra reward. It shows up on the bounty board
+            on the main dashboard until you remove it.
+        </p>
+        <label for="newBountyTitle">Title:</label>
+        <input type="text" id="newBountyTitle" placeholder="e.g. Clean out the garage" style="width:260px;" />
+        <label for="newBountyReward">Reward:</label>
+        <input type="text" id="newBountyReward" placeholder="e.g. $10" style="width:100px;" />
+        <br style="margin-bottom:6px;" />
+        <label for="newBountyDescription" style="display:block;margin-top:6px;">Description (optional):</label>
+        <textarea id="newBountyDescription" rows="2" style="width:100%;max-width:500px;" placeholder="Any extra details…"></textarea>
+        <br />
+        <button id="addBountyBtn" style="margin-top:6px;">Post bounty</button>
+        <p id="bountyMessage" style="color:green;display:none;"></p>
+
+        <h3>Posted bounties</h3>
+        <ul id="adminBountyList" style="list-style:none;padding-left:0;"></ul>
+        <p id="adminBountyListEmpty" style="color:#ccc;">No bounties posted yet.</p>
+    </div>
     <div id="resetDiv" style="background-color:#1b1b1b;border:1px solid #5a1a1a;margin:10px;padding:10px;">
         <h2 style="color:#e57373;">Danger Zone</h2>
         <p style="color:#aaa;">
-            Resets <strong>everything</strong>: clears the PIN, calendar URL, and all chores.
+            Resets <strong>everything</strong>: clears the PIN, calendar URL, all chores, and all bounties.
             You will be sent back to the setup screen.
         </p>
         <button id="resetBtn" style="background-color:#5a1a1a;color:#f5f5f5;border:1px solid #e57373;padding:8px 16px;cursor:pointer;margin-top:8px;">

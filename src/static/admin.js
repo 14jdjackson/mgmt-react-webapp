@@ -143,6 +143,96 @@ async function renderChoreList() {
 }
 
 // ---------------------------------------------------------------------------
+// Bounty board
+// Bounties are posted here and shown on the main dashboard's bounty board.
+// Stored server-side in data/bounties.json.
+// ---------------------------------------------------------------------------
+async function fetchAllBounties() {
+    const resp = await adminFetch('/api/bounties');
+    if (!resp.ok) throw new Error(`Failed to load bounties (${resp.status})`);
+    return resp.json();
+}
+
+async function addBountyToServer(title, reward, description) {
+    if (!title || !title.trim()) throw new Error('Bounty title is required.');
+    const resp = await adminFetch('/api/bounties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim(), reward: reward.trim(), description: description.trim() }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed to post bounty.');
+    return data;
+}
+
+async function removeBountyFromServer(id) {
+    const resp = await adminFetch(`/api/bounties/${id}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed to remove bounty.');
+    return data;
+}
+
+async function renderBountyList() {
+    const list  = document.getElementById('adminBountyList');
+    const empty = document.getElementById('adminBountyListEmpty');
+    if (!list || !empty) return;
+
+    list.innerHTML = '';
+    empty.style.display = 'none';
+
+    let bounties;
+    try {
+        bounties = await fetchAllBounties();
+    } catch (err) {
+        empty.textContent = `Error loading bounties: ${err.message}`;
+        empty.style.display = 'block';
+        return;
+    }
+
+    if (bounties.length === 0) {
+        empty.style.display = 'block';
+        return;
+    }
+
+    bounties.forEach((bounty) => {
+        const li = document.createElement('li');
+        li.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid #333;';
+
+        const info = document.createElement('div');
+        const titleLine = document.createElement('div');
+        titleLine.textContent = bounty.reward ? `${bounty.title} — ${bounty.reward}` : bounty.title;
+        titleLine.style.fontWeight = 'bold';
+        info.appendChild(titleLine);
+        if (bounty.description) {
+            const descLine = document.createElement('div');
+            descLine.textContent = bounty.description;
+            descLine.style.cssText = 'color:#aaa;font-size:0.85rem;margin-top:2px;';
+            info.appendChild(descLine);
+        }
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Remove';
+        btn.style.marginLeft = '10px';
+        btn.addEventListener('click', async () => {
+            btn.disabled    = true;
+            btn.textContent = 'Removing…';
+            try {
+                await removeBountyFromServer(bounty.id);
+                await renderBountyList();
+            } catch (err) {
+                alert(`Could not remove bounty: ${err.message}`);
+                btn.disabled    = false;
+                btn.textContent = 'Remove';
+            }
+        });
+
+        li.appendChild(info);
+        li.appendChild(btn);
+        list.appendChild(li);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Calendar URL
 // Saving POSTs to /api/calendar-url which writes data/config.json on disk —
 // the value persists across container restarts as long as /app/data is a
@@ -320,6 +410,35 @@ document.addEventListener('DOMContentLoaded', function () {
             addChoreBtn.disabled = false;
         }
     });
+
+    // ---- Post bounty ----
+    const addBountyBtn      = document.getElementById('addBountyBtn');
+    const newBountyTitle    = document.getElementById('newBountyTitle');
+    const newBountyReward   = document.getElementById('newBountyReward');
+    const newBountyDescription = document.getElementById('newBountyDescription');
+    const bountyMessage     = document.getElementById('bountyMessage');
+
+    if (addBountyBtn) {
+        addBountyBtn.addEventListener('click', async function () {
+            addBountyBtn.disabled = true;
+            try {
+                await addBountyToServer(
+                    newBountyTitle.value,
+                    newBountyReward.value,
+                    newBountyDescription.value
+                );
+                showMsg(bountyMessage, 'Bounty posted successfully.');
+                newBountyTitle.value       = '';
+                newBountyReward.value      = '';
+                newBountyDescription.value = '';
+                await renderBountyList();
+            } catch (err) {
+                showMsg(bountyMessage, err.message, false);
+            } finally {
+                addBountyBtn.disabled = false;
+            }
+        });
+    }
 
     // ---- Admin PIN ----
     const setAdminPinBtn  = document.getElementById('setAdminPinBtn');
@@ -590,6 +709,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ---- Initial render ----
     renderChoreList();
+    renderBountyList();
 });
 
 // Clear the session hash whenever the page is hidden or unloaded (back button,

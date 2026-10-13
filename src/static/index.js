@@ -234,6 +234,50 @@ async function initCalendar() {
 }
 
 // ---------------------------------------------------------------------------
+// Bounty board — one-off tasks with an extra reward, posted from the admin
+// page. Fetched fresh from GET /api/bounties on every load.
+// ---------------------------------------------------------------------------
+async function loadAndRenderBounties() {
+    const list = document.getElementById('bountyList');
+    if (!list) return;
+
+    let bounties;
+    try {
+        const resp = await fetch('/api/bounties');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        bounties = await resp.json();
+    } catch (err) {
+        list.innerHTML = `<li style="color:#f88">Could not load bounty board: ${err.message}</li>`;
+        return;
+    }
+
+    list.innerHTML = '';
+
+    if (!bounties || bounties.length === 0) {
+        list.innerHTML = '<li style="color:#aaa;">No bounties posted right now.</li>';
+        return;
+    }
+
+    for (const bounty of bounties) {
+        const li = document.createElement('li');
+
+        const titleLine = document.createElement('div');
+        titleLine.textContent = bounty.reward ? `${bounty.title} — ${bounty.reward}` : bounty.title;
+        titleLine.style.fontWeight = 'bold';
+        li.appendChild(titleLine);
+
+        if (bounty.description) {
+            const descLine = document.createElement('div');
+            descLine.textContent = bounty.description;
+            descLine.style.cssText = 'color:#ccc;font-size:0.85rem;margin-top:2px;';
+            li.appendChild(descLine);
+        }
+
+        list.appendChild(li);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Date/time label
 // ---------------------------------------------------------------------------
 function updateDateTime() {
@@ -285,6 +329,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     await loadAndRenderChores();
     applyDueResets();
     await initCalendar();
+    await loadAndRenderBounties();
 
     updateDateTime();
     setInterval(updateDateTime, 1000);

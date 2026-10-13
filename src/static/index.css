@@ -88,3 +88,27 @@ body {
     background-color: #1b1b1b;
 }
 
+#bountyBoardDiv {
+    width: 98%;
+    margin-left: 10px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    background-color: #1b1b1b;
+    border: 1px solid #333;
+    padding: 10px;
+}
+
+#bountyList {
+    list-style: none;
+    padding: 0;
+}
+
+#bountyList li {
+    padding: 6px 0;
+    border-bottom: 1px solid #333;
+}
+
+#bountyList li:last-child {
+    border-bottom: none;
+}
+

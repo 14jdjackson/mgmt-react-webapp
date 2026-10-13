@@ -15,6 +15,7 @@ mgmt/
 ├── Dockerfile
 ├── data/               ← mount this as a Docker volume
 │   ├── config.json     PIN hash, Google credentials, calendar selection
+│   ├── bounties.json   posted bounties shown on the main page's bounty board
 │   └── chores/
 │       ├── daily.txt   one chore per line
 │       ├── weekly.txt
@@ -168,7 +169,9 @@ your 4-digit PIN. From there you can:
   your Google Account, and choose which calendar to display
 - **Admin PIN** — change the 4-digit PIN
 - **Add/Remove Chores** — manage individual tasks or bulk-import from a `.txt` file
-- **Danger Zone** — reset everything (clears PIN, credentials, tokens, and all chores)
+- **Bounty Board** — post one-off tasks with an extra reward; they appear on the
+  main dashboard's bounty board until removed
+- **Danger Zone** — reset everything (clears PIN, credentials, tokens, chores, and bounties)
 
 ---
 
@@ -188,16 +191,27 @@ your 4-digit PIN. From there you can:
 
 ---
 
+## How the bounty board works
+
+- The admin page's **Bounty Board** section posts a bounty with a title, an
+  optional reward (e.g. "$10"), and an optional description
+- Bounties are stored in `data/bounties.json` and shown newest-first
+- The main dashboard fetches `GET /api/bounties` on load and renders them in
+  the **Bounty Board** section
+- Remove a bounty from the admin page once it's claimed or no longer needed
+
+---
+
 ## Full reset
 
 Admin page → **Danger Zone** → **Reset Everything**
 
 This clears the admin PIN, Google credentials, OAuth tokens, calendar
-selection, calendar embed URL, and all chores, then redirects to the setup
-wizard.
+selection, calendar embed URL, all chores, and all bounties, then redirects
+to the setup wizard.
 
-Alternatively, to reset manually: delete or empty `data/config.json` and the
-files in `data/chores/`, then restart the server.
+Alternatively, to reset manually: delete or empty `data/config.json`, the
+files in `data/chores/`, and `data/bounties.json`, then restart the server.
 
 ---
 
@@ -212,6 +226,14 @@ files in `data/chores/`, then restart the server.
 | POST | `/api/chores/:type` | PIN | Add a chore — `{ "text": "…" }` |
 | DELETE | `/api/chores/:type/by-text` | PIN | Remove by text — `{ "text": "…" }` |
 | DELETE | `/api/chores/:type/:index` | PIN | Remove by line index (0-based) |
+
+### Bounty board
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/bounties` | — | All bounties, newest first |
+| POST | `/api/bounties` | PIN | Post a bounty — `{ "title", "reward", "description" }` (`reward`/`description` optional) |
+| DELETE | `/api/bounties/:id` | PIN | Remove a bounty by id |
 
 ### Calendar (embed URL fallback)
 

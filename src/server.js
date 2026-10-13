@@ -22,6 +22,7 @@
 const express = require('express');
 const fs      = require('fs');
 const path    = require('path');
+const crypto  = require('crypto');
 const { google } = require('googleapis');
 
 const app     = express();
@@ -38,6 +39,7 @@ function getGoogleCreds() {
 const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const CHORES_DIR = path.join(DATA_DIR, 'chores');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
+const BOUNTIES_FILE = path.join(DATA_DIR, 'bounties.json');
 
 const VALID_TYPES = new Set(['daily', 'weekly', 'monthly']);
 
@@ -55,6 +57,9 @@ function ensureDataDir() {
             calendarUrl:   '',
             adminPinHash:  ''    // SHA-256 hash of the 4-digit PIN; empty = PIN not yet set
         }, null, 2), 'utf8');
+    }
+    if (!fs.existsSync(BOUNTIES_FILE)) {
+        fs.writeFileSync(BOUNTIES_FILE, JSON.stringify([], null, 2), 'utf8');
     }
 }
 
@@ -190,6 +195,72 @@ app.delete('/api/chores/:type/:index', requireAdminPin, (req, res) => {
     const [removed] = lines.splice(index, 1);
     writeLines(type, lines);
     res.json({ status: 'deleted', text: removed });
+});
+
+// ---------------------------------------------------------------------------
+// Bounty board API
+//
+// One-off tasks worth an extra reward, posted from the admin page and shown
+// on the main dashboard's bounty board. Stored as a flat JSON array in
+// data/bounties.json.
+//
+// GET    /api/bounties       — all bounties, newest first  (public)
+// POST   /api/bounties       — post a bounty                (admin PIN)
+//                               body: { "title", "reward", "description" }
+// DELETE /api/bounties/:id   — remove a bounty              (admin PIN)
+// ---------------------------------------------------------------------------
+function readBounties() {
+    try {
+        return JSON.parse(fs.readFileSync(BOUNTIES_FILE, 'utf8'));
+    } catch (_) {
+        return [];
+    }
+}
+
+function writeBounties(bounties) {
+    fs.writeFileSync(BOUNTIES_FILE, JSON.stringify(bounties, null, 2), 'utf8');
+}
+
+app.get('/api/bounties', (req, res) => {
+    const bounties = readBounties()
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(bounties);
+});
+
+app.post('/api/bounties', requireAdminPin, (req, res) => {
+    const title       = (req.body.title       || '').trim();
+    const reward      = (req.body.reward      || '').trim();
+    const description = (req.body.description || '').trim();
+
+    if (!title) {
+        return res.status(400).json({ error: "'title' is required and must not be empty." });
+    }
+
+    const bounty = {
+        id:          crypto.randomUUID(),
+        title,
+        reward,
+        description,
+        createdAt:   new Date().toISOString(),
+    };
+
+    const bounties = readBounties();
+    bounties.push(bounty);
+    writeBounties(bounties);
+
+    res.status(201).json(bounty);
+});
+
+app.delete('/api/bounties/:id', requireAdminPin, (req, res) => {
+    const { id }    = req.params;
+    const bounties  = readBounties();
+    const filtered  = bounties.filter(b => b.id !== id);
+    if (filtered.length === bounties.length) {
+        return res.status(404).json({ error: `No bounty with id '${id}'.` });
+    }
+    writeBounties(filtered);
+    res.json({ status: 'deleted', id });
 });
 
 // ---------------------------------------------------------------------------
@@ -530,6 +601,8 @@ app.post('/api/reset', requireAdminPin, (req, res) => {
     for (const type of VALID_TYPES) {
         fs.writeFileSync(path.join(CHORES_DIR, `${type}.txt`), '', 'utf8');
     }
+
+    writeBounties([]);
 
     res.json({ status: 'reset' });
 });
