@@ -58,11 +58,14 @@ After setup completes you land on the main dashboard.
 The dashboard (`/`) is meant to stay open on a screen around the house. From
 top to bottom:
 
-- **Date and time**
+- **Top bar**: date and time on the left, **Login** on the right
 - **Chores/Tasks** and the **Bounty Board**, side by side and the same size
-- **Calendar**: the next 7 days of events, across the full width
+- **Calendar**: the next 7 days of events, across the full width. The box
+  grows to fit every event, so a busy week makes the page longer.
 
-Click **Login** (top right) and enter the PIN to reach the admin page.
+All three boxes share the same left and right edges.
+
+Click **Login** and enter the PIN to reach the admin page.
 
 ---
 
