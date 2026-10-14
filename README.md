@@ -120,7 +120,13 @@ docker compose up -d --build
 ```
 
 This builds the image from `Dockerfiles/Dockerfile`, mounts `./data` into the
-container at `/app/data`, and serves the app on port 3000. Open
+container at `/app/data`, and serves the app on port 3000.
+
+The build uses the host's network (`network: host` under `build:` in
+`docker-compose.yml`). On some machines, build steps get a DNS server they
+can't reach, and `npm install` hangs for a few minutes and then fails with
+`EAI_AGAIN registry.npmjs.org`. This only affects building; the running
+container still uses Docker's normal network and the `3000:3000` port mapping. Open
 `http://<pi-ip>:3000` from any device on your network.
 
 `restart: unless-stopped` in `docker-compose.yml` starts the container again
@@ -133,7 +139,7 @@ image picks up new code and dependencies. Everything in `data/` is kept.
 Without Compose, build from the repository folder (not from `Dockerfiles/`):
 
 ```bash
-docker build -f Dockerfiles/Dockerfile -t mgmt .
+docker build --network host -f Dockerfiles/Dockerfile -t mgmt .
 docker run -d \
   -p 3000:3000 \
   -v "$(pwd)/data:/app/data" \

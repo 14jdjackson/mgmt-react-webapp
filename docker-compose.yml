@@ -3,6 +3,7 @@ services:
     build:
       context: .                          # base folder — gives Docker access to /src and /dockerfiles
       dockerfile: Dockerfiles/Dockerfile
+      network: host                       # build steps only (npm install DNS); the running container is unaffected
     container_name: mgmt
     ports:
       - "3000:3000"
