@@ -1,13 +1,13 @@
 // index.js — MGMT main page
 //
 // Chores are fetched from GET /api/chores on every load.
-// Calendar URL is fetched from GET /api/calendar-url (reads data/config.json).
+// Calendar events are fetched from GET /api/calendar/events.
 // Reset scheduling and checkbox state are managed client-side.
 
 // index.js — MGMT main page
 //
 // Chores are fetched from GET /api/chores on every load.
-// Calendar URL is fetched from GET /api/calendar-url (reads data/config.json).
+// Calendar events are fetched from GET /api/calendar/events.
 // Admin PIN is verified via POST /api/pin/verify (hash stored in data/config.json).
 // Reset timestamps use localStorage — see the localStorage inventory at the bottom.
 
@@ -141,53 +141,121 @@ function scheduleDailyReset() {
     nextMidnight.setHours(0, 0, 0, 0);
     setTimeout(function () {
         applyDueResets();
+        initCalendar();
         scheduleDailyReset();
     }, nextMidnight - now);
 }
 
 // ---------------------------------------------------------------------------
-// Calendar — events list (OAuth) or iframe fallback
+// Calendar — one-week events list (merged iCal feeds) or iframe fallback
 // Calls GET /api/calendar/events which returns one of:
-//   { source: 'oauth', events: [...] }  — render events list
-//   { source: 'iframe', url: '...' }    — show embed iframe
-//   { source: 'none' }                  — hide section
+//   { source: 'ical', events, calendars, errors } — render events list
+//   { source: 'iframe', url: '...' }              — show embed iframe
+//   { source: 'none' }                            — hide section
 // ---------------------------------------------------------------------------
+const CALENDAR_DAYS = 7;
+
+// The server only downloads feeds at startup (daily reboot). Older than this,
+// the end of the 7-day window is past what was downloaded.
+const CALENDAR_STALE_MS = 24 * 60 * 60 * 1000;
+const CALENDAR_RETRY_MS = 30 * 1000;
+let calendarRetryTimer  = null;
+
+function retryCalendarSoon() {
+    clearTimeout(calendarRetryTimer);
+    calendarRetryTimer = setTimeout(initCalendar, CALENDAR_RETRY_MS);
+}
+
+// One colour per calendar, by its position in the admin list
+const CALENDAR_COLORS = ['#4e9af1', '#e5a03b', '#5cc489', '#d96fb8', '#9b8cf2', '#e06c6c', '#4fc3c7', '#c9c45a'];
+
+function localDateKey(date) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// All-day events carry a bare 'YYYY-MM-DD' date; read it as local midnight
+function eventStart(event) {
+    return event.start.date ? new Date(event.start.date + 'T00:00:00') : new Date(event.start.dateTime);
+}
+
+function eventEnd(event) {
+    return event.end.date ? new Date(event.end.date + 'T00:00:00') : new Date(event.end.dateTime);
+}
+
 function formatEventTime(event) {
     if (event.start.date) return 'All day';
     const t = new Date(event.start.dateTime);
     return t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-function dayLabel(isoDate) {
-    const today    = new Date().toISOString().slice(0, 10);
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    if (isoDate === today)    return 'TODAY';
-    if (isoDate === tomorrow) return 'TOMORROW';
-    return new Date(isoDate + 'T00:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+function dayLabel(dateKey) {
+    const today    = new Date();
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    if (dateKey === localDateKey(today))    return 'TODAY';
+    if (dateKey === localDateKey(tomorrow)) return 'TOMORROW';
+    return new Date(dateKey + 'T00:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
 }
 
-function renderEvents(events) {
+// Red banner above the list for anything that means events may be missing
+function showCalendarWarning(lines) {
+    const box = document.getElementById('calendarWarning');
+    if (!box) return;
+    box.innerHTML = '';
+    box.style.display = lines.length ? 'block' : 'none';
+    if (!lines.length) return;
+
+    const heading = document.createElement('strong');
+    heading.textContent = '⚠ Calendar incomplete: some events may be missing';
+    box.appendChild(heading);
+    for (const line of lines) {
+        const div = document.createElement('div');
+        div.textContent = line;
+        box.appendChild(div);
+    }
+}
+
+function renderEvents({ events, calendars, errors, fetchedAt }) {
     const list = document.getElementById('eventsList');
     if (!list) return;
     list.innerHTML  = '';
     list.style.display = 'block';
 
-    if (!events || events.length === 0) {
+    // Keep events overlapping [today 00:00, today + 7 days) in local time
+    const now        = new Date();
+    const weekStart  = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekEnd    = new Date(now.getFullYear(), now.getMonth(), now.getDate() + CALENDAR_DAYS);
+    const weekEvents = (events || [])
+        .filter(ev => eventStart(ev) < weekEnd && eventEnd(ev) > weekStart)
+        .sort((a, b) => eventStart(a) - eventStart(b));
+
+    // A failed feed is reported but doesn't hide the others
+    const warnings = (errors || []).map(({ calendar, error }) => `Could not load "${calendar}": ${error}`);
+    if (fetchedAt && now - new Date(fetchedAt) > CALENDAR_STALE_MS) {
+        warnings.push(`Last downloaded ${new Date(fetchedAt).toLocaleString()}. Restart the server to refresh.`);
+    }
+    showCalendarWarning(warnings);
+
+    if (weekEvents.length === 0) {
         const li = document.createElement('li');
         li.style.color = '#aaa';
-        li.textContent = 'No upcoming events in the next 2 weeks.';
+        li.textContent = 'No events in the next week.';
         list.appendChild(li);
         return;
     }
 
+    const showCalendarNames = (calendars || []).length > 1;
+
+    // Events already in progress (e.g. a multi-day trip) are listed under today
     const days = {};
-    for (const ev of events) {
-        const key = (ev.start.dateTime || ev.start.date).slice(0, 10);
+    for (const ev of weekEvents) {
+        const start = eventStart(ev);
+        const key   = localDateKey(start < weekStart ? weekStart : start);
         if (!days[key]) days[key] = [];
         days[key].push(ev);
     }
 
-    for (const [day, dayEvents] of Object.entries(days)) {
+    for (const [day, dayEvents] of Object.entries(days).sort(([a], [b]) => a.localeCompare(b))) {
         const header = document.createElement('li');
         header.style.cssText = 'font-weight:bold;color:#888;margin-top:10px;font-size:0.8rem;letter-spacing:0.05em;';
         header.textContent   = dayLabel(day);
@@ -195,7 +263,8 @@ function renderEvents(events) {
 
         for (const ev of dayEvents) {
             const li = document.createElement('li');
-            li.style.cssText = 'display:flex;gap:10px;padding:4px 0 4px 10px;border-left:2px solid #444;margin:3px 0;';
+            const color = CALENDAR_COLORS[(ev.calendarIndex || 0) % CALENDAR_COLORS.length];
+            li.style.cssText = `display:flex;gap:10px;padding:4px 0 4px 10px;border-left:3px solid ${color};margin:3px 0;`;
 
             const time = document.createElement('span');
             time.style.cssText = 'color:#888;font-size:0.85rem;min-width:52px;flex-shrink:0;';
@@ -206,6 +275,12 @@ function renderEvents(events) {
 
             li.appendChild(time);
             li.appendChild(title);
+            if (showCalendarNames) {
+                const name = document.createElement('span');
+                name.style.cssText = `color:${color};font-size:0.8rem;margin-left:auto;padding-right:6px;`;
+                name.textContent   = ev.calendar;
+                li.appendChild(name);
+            }
             list.appendChild(li);
         }
     }
@@ -220,16 +295,23 @@ async function initCalendar() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
 
-        if (data.source === 'oauth') {
-            renderEvents(data.events);
+        if (data.source === 'ical' && data.loading) {
+            showCalendarWarning(['The server is still downloading your calendars. Retrying in 30 seconds…']);
+            retryCalendarSoon();
+        } else if (data.source === 'ical') {
+            renderEvents(data);
         } else if (data.source === 'iframe' && data.url) {
             const iframe = document.getElementById('calendarIframe');
             if (iframe) { iframe.src = data.url; iframe.style.display = ''; }
         } else {
             calDiv.style.display = 'none';
         }
-    } catch (_) {
-        calDiv.style.display = 'none';
+    } catch (err) {
+        // Don't hide the section: an empty calendar would look like a free week
+        showCalendarWarning([`Could not reach the server for calendar events (${err.message}). Retrying in 30 seconds…`]);
+        const list = document.getElementById('eventsList');
+        if (list) { list.innerHTML = ''; list.style.display = 'none'; }
+        retryCalendarSoon();
     }
 }
 

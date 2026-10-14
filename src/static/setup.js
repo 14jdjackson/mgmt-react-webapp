@@ -30,8 +30,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const pinError   = document.getElementById('pinError');
     const pinNextBtn = document.getElementById('pinNextBtn');
 
-    const clientIdInput     = document.getElementById('clientIdInput');
-    const clientSecretInput = document.getElementById('clientSecretInput');
+    const icalUrlInput      = document.getElementById('icalUrlInput');
     const credsError        = document.getElementById('credsError');
     const credsSkipBtn      = document.getElementById('credsSkipBtn');
     const credsSaveBtn      = document.getElementById('credsSaveBtn');
@@ -87,7 +86,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         el.addEventListener('keydown', e => { if (e.key === 'Enter') pinNextBtn.click(); });
     });
 
-    // ---- Step 2: Google credentials ----
+    // ---- Step 2: Google Calendar iCal address ----
 
     function finishSetup() {
         step2.classList.remove('active');
@@ -99,30 +98,28 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     credsSaveBtn.addEventListener('click', async function () {
         credsError.style.display = 'none';
-        const clientId     = clientIdInput.value.trim();
-        const clientSecret = clientSecretInput.value.trim();
+        const url = icalUrlInput.value.trim();
 
-        if (!clientId && !clientSecret) {
+        if (!url) {
             finishSetup();
-            return;
-        }
-        if (!clientId || !clientSecret) {
-            credsError.textContent = 'Enter both the Client ID and Client Secret, or skip.';
-            credsError.style.display = 'block';
             return;
         }
 
         credsSaveBtn.disabled = true;
         credsSkipBtn.disabled = true;
         try {
-            const resp = await fetch('/api/auth/google/credentials', {
+            const resp = await fetch('/api/calendar/ical', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json', 'X-Admin-Pin-Hash': pinHash },
-                body:    JSON.stringify({ clientId, clientSecret }),
+                body:    JSON.stringify({ url }),
             });
-            if (!resp.ok) {
-                const data = await resp.json();
-                throw new Error(data.error || 'Failed to save credentials.');
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || 'Failed to save the iCal address.');
+            const added = (data.feeds || []).find(f => f.id === data.id) || {};
+            if (added.error) {
+                // The calendar is saved either way; it can be fixed or removed from the admin page
+                icalUrlInput.value = '';
+                throw new Error(`Saved, but the download failed: ${added.error}. Fix or remove it later on the admin page, or click Skip to continue.`);
             }
             finishSetup();
         } catch (err) {
@@ -133,7 +130,5 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
     });
 
-    [clientIdInput, clientSecretInput].forEach(el => {
-        el.addEventListener('keydown', e => { if (e.key === 'Enter') credsSaveBtn.click(); });
-    });
+    icalUrlInput.addEventListener('keydown', e => { if (e.key === 'Enter') credsSaveBtn.click(); });
 });

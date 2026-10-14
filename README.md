@@ -9,26 +9,32 @@ Chores, calendar, and (eventually) finances. Runs as a Docker container on a Ras
 ## Directory layout
 
 ```
-mgmt/
-├── server.js           Node/Express backend
-├── package.json
-├── Dockerfile
-├── data/               ← mount this as a Docker volume
-│   ├── config.json     PIN hash, Google credentials, calendar selection
-│   ├── bounties.json   posted bounties shown on the main page's bounty board
+mgmt-react-webapp/
+├── docker-compose.yml   builds and runs the container (recommended)
+├── Dockerfiles/
+│   └── Dockerfile
+├── data/                ← created on first run; mounted into the container
+│   ├── config.json      PIN hash, Google Calendar iCal addresses, embed URL
+│   ├── bounties.json    posted bounties shown on the dashboard's bounty board
 │   └── chores/
-│       ├── daily.txt   one chore per line
+│       ├── daily.txt    one chore per line
 │       ├── weekly.txt
 │       └── monthly.txt
-└── static/             served as-is by Express
-    ├── index.html      main dashboard
-    ├── index.js
-    ├── admin.html      admin settings page (PIN-protected)
-    ├── admin.js
-    ├── setup.html      first-time setup wizard
-    ├── setup.js
-    └── index.css
+└── src/
+    ├── server.js        Node/Express backend
+    ├── package.json
+    └── static/          served as-is by Express
+        ├── index.html   main dashboard
+        ├── index.js
+        ├── index.css
+        ├── admin.html   admin settings page (PIN-protected)
+        ├── admin.js
+        ├── setup.html   first-time setup wizard
+        └── setup.js
 ```
+
+`data/` is in `.gitignore` because it holds the PIN hash and the secret
+calendar addresses. Never commit it.
 
 ---
 
@@ -39,65 +45,102 @@ automatically redirected to the setup wizard at `/setup.html`. It walks you
 through two steps:
 
 1. **Create a 4-digit admin PIN** — protects the admin settings page
-2. **Google Calendar credentials** (optional) — paste your OAuth Client ID and
-   Client Secret so the app can connect to a private Google Calendar. You can
-   skip this and add them later from the admin page.
+2. **Google Calendar** (optional) — paste a calendar's secret iCal address so
+   the dashboard can show your events. You can skip this, and add more
+   calendars later from the admin page.
 
 After setup completes you land on the main dashboard.
 
 ---
 
-## Google Calendar setup
+## Main dashboard
 
-The app uses the **OAuth 2.0 Device Authorization Flow**, which works on any
-hostname or IP address — no redirect URI or domain name required.
+The dashboard (`/`) is meant to stay open on a screen around the house. From
+top to bottom:
 
-### Step 1 — Create a Google Cloud project
+- **Date and time**
+- **Chores/Tasks** and the **Bounty Board**, side by side and the same size
+- **Calendar**: the next 7 days of events, across the full width
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and
-   create a new project (or select an existing one).
-2. In the sidebar: **APIs & Services → Library** → search for
-   **Google Calendar API** → Enable it.
-
-### Step 2 — Create OAuth 2.0 credentials
-
-1. **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
-2. Application type: **TV and Limited Input devices**
-   *(this is the type that supports the device flow — no redirect URI needed)*
-3. Give it a name (e.g. "MGMT Dashboard") and click **Create**.
-4. Copy the **Client ID** and **Client Secret** from the confirmation dialog.
-
-> If Google asks you to configure the OAuth consent screen first, set it to
-> **Internal** (if using a Google Workspace account) or **External** with your
-> own email as a test user.
-
-### Step 3 — Enter credentials in MGMT
-
-**During first-time setup:** paste the Client ID and Secret into the fields on
-setup step 2.
-
-**After setup / to update credentials:** Admin page → Google Calendar section
-→ enter Client ID and Secret → **Save credentials**.
-
-Credentials are stored in `data/config.json`. If you prefer to inject them as
-environment variables instead, set `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET` — env vars always take priority over the saved values.
-
-### Step 4 — Connect your Google Account
-
-1. Go to the **Admin page** → Google Calendar section.
-2. Click **Connect Google Calendar**.
-3. The admin page shows a short code and a link to **google.com/device**.
-4. Open that link in any browser, sign in to your Google Account, and enter
-   the code. You have a few minutes before it expires.
-5. The admin page detects approval automatically and prompts you to choose
-   which calendar to display.
-6. Select a calendar and click **Use this calendar**. The main dashboard will
-   now show upcoming events from that calendar.
-
-To switch accounts or calendars, click **Disconnect** and repeat the flow.
+Click **Login** (top right) and enter the PIN to reach the admin page.
 
 ---
+
+## Google Calendar setup
+
+The dashboard shows the next 7 days of events from one or more Google
+Calendars, using each calendar's private iCal feed. Events from every calendar
+are merged into one list, with a colour and name per calendar. No Google Cloud
+project or Google sign-in setup is needed.
+
+For each calendar you want to show:
+
+1. In [Google Calendar](https://calendar.google.com/), open **Settings**, pick
+   the calendar in the left sidebar, and scroll to **Integrate calendar**.
+2. Copy the **Secret address in iCal format**
+   (`https://calendar.google.com/calendar/ical/…/private-…/basic.ics`).
+3. Paste it into setup step 2, or into Admin page → Google Calendar →
+   **Add calendar**. The name is optional; if left blank, the calendar's own
+   name from Google is used.
+
+Colours follow the order calendars were added.
+
+**Missing-events warning:** the dashboard shows a red "Calendar incomplete"
+banner above the event list whenever events might be missing, so an empty day
+is never mistaken for a free one:
+
+- a calendar failed to download (bad link, Google error, or a page that isn't
+  a calendar); the other calendars are still listed
+- the last download is more than a day old (e.g. the daily reboot didn't happen)
+- the server is still downloading after a restart, or can't be reached; the
+  dashboard retries every 30 seconds until it can
+
+The addresses are stored in `data/config.json`. Treat them like passwords:
+anyone with one can read that calendar. If one leaks, use **Reset** next to the
+secret address in Google Calendar, then remove the old entry here and add the
+new address.
+
+**When events update:** the server downloads every feed once at startup and
+again whenever you add or remove a calendar on the admin page. The host is expected to
+reboot daily; to pick up new events sooner, restart the container
+(`docker restart mgmt`). Google also caches the feed on its side, so very
+recent changes can take a few hours to appear in it.
+
+> Google Workspace (work/school) accounts may have the secret address disabled
+> by their administrator.
+
+---
+
+## Docker deployment on Raspberry Pi
+
+From the repository folder:
+
+```bash
+docker compose up -d --build
+```
+
+This builds the image from `Dockerfiles/Dockerfile`, mounts `./data` into the
+container at `/app/data`, and serves the app on port 3000. Open
+`http://<pi-ip>:3000` from any device on your network.
+
+`restart: unless-stopped` in `docker-compose.yml` starts the container again
+after a Pi reboot, and the reboot is also what refreshes calendar events (see
+above).
+
+**After pulling changes**, run `docker compose up -d --build` again so the
+image picks up new code and dependencies. Everything in `data/` is kept.
+
+Without Compose, build from the repository folder (not from `Dockerfiles/`):
+
+```bash
+docker build -f Dockerfiles/Dockerfile -t mgmt .
+docker run -d \
+  -p 3000:3000 \
+  -v "$(pwd)/data:/app/data" \
+  --restart unless-stopped \
+  --name mgmt \
+  mgmt
+```
 
 ## Running locally (no Docker)
 
@@ -108,55 +151,8 @@ node server.js
 # Open http://localhost:3000
 ```
 
-To use Google Calendar locally, set the env vars before starting:
-
-```bash
-GOOGLE_CLIENT_ID=your-id GOOGLE_CLIENT_SECRET=your-secret node server.js
-```
-
-Or skip the env vars and enter the credentials via the admin page after setup.
-
-## Docker deployment on Raspberry Pi
-
-### 1. Build
-
-```bash
-docker build -t mgmt .
-```
-
-### 2. Run
-
-Mount your local `data/` directory so chores and config persist across
-container restarts and image rebuilds:
-
-```bash
-docker run -d \
-  -p 3000:3000 \
-  -v /home/pi/mgmt/data:/app/data \
-  --restart unless-stopped \
-  --name mgmt \
-  mgmt
-```
-
-Access from any device on your network: `http://<pi-ip>:3000`
-
-`--restart unless-stopped` keeps the container running after a Pi reboot
-with no extra configuration.
-
-If you prefer to pass Google credentials as env vars rather than through the UI:
-
-```bash
-docker run -d \
-  -p 3000:3000 \
-  -v /home/pi/mgmt/data:/app/data \
-  -e GOOGLE_CLIENT_ID=your-id \
-  -e GOOGLE_CLIENT_SECRET=your-secret \
-  --restart unless-stopped \
-  --name mgmt \
-  mgmt
-```
-
-Or use `docker-compose.yml` — add them under the `environment:` key.
+Data is stored in `src/data/` unless you set `DATA_DIR`. `PORT` changes the
+port (default 3000).
 
 ---
 
@@ -165,13 +161,14 @@ Or use `docker-compose.yml` — add them under the `environment:` key.
 Navigate to the admin page by clicking **Login** on the dashboard and entering
 your 4-digit PIN. From there you can:
 
-- **Google Calendar** — save/update OAuth credentials, connect or disconnect
-  your Google Account, and choose which calendar to display
+- **Google Calendar** — add or remove calendars by their secret iCal address,
+  and see when each was last downloaded and whether it failed
 - **Admin PIN** — change the 4-digit PIN
 - **Add/Remove Chores** — manage individual tasks or bulk-import from a `.txt` file
-- **Bounty Board** — post one-off tasks with an extra reward; they appear on the
-  main dashboard's bounty board until removed
-- **Danger Zone** — reset everything (clears PIN, credentials, tokens, chores, and bounties)
+- **Bounty Board** — post one-off tasks with an optional reward, and remove
+  them once they're done
+- **Danger Zone** — reset everything (clears the PIN, calendar addresses,
+  chores, and bounties)
 
 ---
 
@@ -193,12 +190,21 @@ your 4-digit PIN. From there you can:
 
 ## How the bounty board works
 
-- The admin page's **Bounty Board** section posts a bounty with a title, an
-  optional reward (e.g. "$10"), and an optional description
-- Bounties are stored in `data/bounties.json` and shown newest-first
-- The main dashboard fetches `GET /api/bounties` on load and renders them in
-  the **Bounty Board** section
-- Remove a bounty from the admin page once it's claimed or no longer needed
+Bounties are one-off jobs worth something extra, separate from the recurring
+chores (e.g. "Clean out the garage — $10").
+
+- **Posting:** admin page → **Bounty Board** → enter a title (required), a
+  reward (optional, free text such as "$10" or "Pizza night"), and a
+  description (optional) → **Post bounty**.
+- **On the dashboard:** the Bounty Board box sits to the right of
+  Chores/Tasks. Each bounty shows its title and reward in bold, with the
+  description underneath; the newest is at the top. When there are none, it
+  says "No bounties posted right now."
+- **Removing:** bounties stay up until removed from the admin page. There is
+  no claim or complete button on the dashboard, so remove a bounty once it's
+  claimed or no longer needed.
+- **Storage:** `data/bounties.json`. The dashboard loads bounties each time
+  the page loads, so reload it to see a newly posted one.
 
 ---
 
@@ -206,9 +212,8 @@ your 4-digit PIN. From there you can:
 
 Admin page → **Danger Zone** → **Reset Everything**
 
-This clears the admin PIN, Google credentials, OAuth tokens, calendar
-selection, calendar embed URL, all chores, and all bounties, then redirects
-to the setup wizard.
+This clears the admin PIN, iCal addresses, calendar embed URL, all chores, and
+all bounties, then redirects to the setup wizard.
 
 Alternatively, to reset manually: delete or empty `data/config.json`, the
 files in `data/chores/`, and `data/bounties.json`, then restart the server.
@@ -235,26 +240,25 @@ files in `data/chores/`, and `data/bounties.json`, then restart the server.
 | POST | `/api/bounties` | PIN | Post a bounty — `{ "title", "reward", "description" }` (`reward`/`description` optional) |
 | DELETE | `/api/bounties/:id` | PIN | Remove a bounty by id |
 
-### Calendar (embed URL fallback)
+### Calendar embed URL (fallback)
+
+Used only when no iCal calendars are added. Admin page → Google Calendar →
+"Use embed URL instead" takes a public calendar's embed link and shows it in an
+iframe instead of the event list.
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/calendar-url` | — | Get embed URL from config |
 | POST | `/api/calendar-url` | PIN | Save embed URL — `{ "url": "…" }` |
-| GET | `/api/calendar/events` | — | Unified: returns OAuth events, iframe URL, or `none` |
 
-### Google Calendar OAuth
+### Google Calendar (iCal feed)
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/auth/google/status` | — | Connection state and calendar info |
-| GET | `/api/auth/google/credentials` | PIN | Whether credentials are set and their source |
-| POST | `/api/auth/google/credentials` | PIN | Save Client ID + Secret — `{ "clientId", "clientSecret" }` |
-| POST | `/api/auth/google/device/start` | PIN | Begin device auth flow — returns `{ userCode, verificationUrl }` |
-| GET | `/api/auth/google/device/poll` | PIN | Poll for user approval — returns `{ status }` |
-| DELETE | `/api/auth/google` | PIN | Disconnect (clears tokens) |
-| GET | `/api/auth/google/calendars` | PIN | List the user's calendars |
-| POST | `/api/auth/google/calendar` | PIN | Select which calendar to show — `{ "calendarId", "calendarSummary" }` |
+| GET | `/api/calendar/events` | — | Merged iCal events with per-calendar errors and last download time (`loading: true` until the first download finishes), or the embed URL, or `none` |
+| GET | `/api/calendar/ical` | PIN | Calendars with masked address, event count, error, and last download time |
+| POST | `/api/calendar/ical` | PIN | Add a calendar and re-download — `{ "name": "…", "url": "…" }` (`name` optional) |
+| DELETE | `/api/calendar/ical/:id` | PIN | Remove a calendar by id and re-download |
 
 ### Admin PIN
 

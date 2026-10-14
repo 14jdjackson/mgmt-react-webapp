@@ -83,27 +83,21 @@
             </div>
         </div>
 
-        <!-- Step 2: Google credentials -->
+        <!-- Step 2: Google Calendar iCal address -->
         <div id="step2" class="step">
             <div class="step-indicator">Step 2 of 2</div>
             <h2>Google Calendar (optional)</h2>
             <p>
-                To display a private Google Calendar, enter your OAuth credentials below.
-                You can skip this now and add them later from the admin page.
+                To show your Google Calendar on the dashboard, paste its private iCal address below.
+                You can skip this now, and add more calendars later from the admin page.
             </p>
             <p style="color:#888;font-size:0.82rem;line-height:1.6;margin-bottom:14px;">
-                In <strong>Google Cloud Console</strong>: create a project → enable the
-                <strong>Google Calendar API</strong> → Credentials → Create OAuth 2.0 Client ID
-                → App type: <strong>TV and Limited Input devices</strong>.
-                Copy the Client ID and Client Secret from the result screen.
+                In <strong>Google Calendar</strong>: Settings → pick your calendar →
+                Integrate calendar → copy the <strong>Secret address in iCal format</strong>.
             </p>
             <div class="field">
-                <label for="clientIdInput">Client ID</label>
-                <input type="text" id="clientIdInput" placeholder="123456789-abc….apps.googleusercontent.com" autocomplete="off" />
-            </div>
-            <div class="field">
-                <label for="clientSecretInput">Client Secret</label>
-                <input type="password" id="clientSecretInput" placeholder="GOCSPX-…" autocomplete="new-password" />
+                <label for="icalUrlInput">Secret iCal address</label>
+                <input type="password" id="icalUrlInput" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" autocomplete="off" />
             </div>
             <p id="credsError" class="error"></p>
             <div class="btn-row">
