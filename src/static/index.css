@@ -57,10 +57,17 @@ body {
     font-weight: 500;
 }
 
-#choresDiv {
+#choresRow {
+    display: flex;
+}
+
+.choresColumn {
     width: 45%;
-    height: 50vh;
     margin-left: 10px;
+}
+
+#choresDiv {
+    height: 50vh;
     margin-top: 10px;
     overflow: auto;
     border: 1px solid #333;
@@ -89,10 +96,9 @@ body {
 }
 
 #bountyBoardDiv {
-    width: 98%;
-    margin-left: 10px;
+    height: 50vh;
     margin-top: 10px;
-    margin-bottom: 10px;
+    overflow: auto;
     background-color: #1b1b1b;
     border: 1px solid #333;
     padding: 10px;

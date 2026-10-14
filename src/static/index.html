@@ -9,37 +9,43 @@
     <div id="dateTimeDiv">
         <span id="dateTimeLabel">Loading date/time&nbsp;...</span>
     </div>
-    <h2>Chores/Tasks</h2>
-    <div id="choresDiv">
-        <ul id="choresList">
-            <li>
-                <label>
-                    <input type="checkbox" hidden="false" data-reset="daily">
-                    Daily Task
-                </label>
-            </li>
-            <li>
-                <label>
-                    <input type="checkbox" hidden="false" data-reset="weekly">
-                    Weekly Task
-                </label>
-            </li>
-            <li>
-                <label>
-                    <input type="checkbox" hidden="false" data-reset="monthly">
-                    Monthly Task
-                </label>
-            </li>
-        </ul>
+    <div id="choresRow">
+        <div class="choresColumn">
+            <h2>Chores/Tasks</h2>
+            <div id="choresDiv">
+                <ul id="choresList">
+                    <li>
+                        <label>
+                            <input type="checkbox" hidden="false" data-reset="daily">
+                            Daily Task
+                        </label>
+                    </li>
+                    <li>
+                        <label>
+                            <input type="checkbox" hidden="false" data-reset="weekly">
+                            Weekly Task
+                        </label>
+                    </li>
+                    <li>
+                        <label>
+                            <input type="checkbox" hidden="false" data-reset="monthly">
+                            Monthly Task
+                        </label>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <div class="choresColumn">
+            <h2>Bounty Board</h2>
+            <div id="bountyBoardDiv">
+                <ul id="bountyList"></ul>
+            </div>
+        </div>
     </div>
     <div id="calendarDiv">
         <h2>Calendar</h2>
         <ul id="eventsList" style="list-style:none;padding:0;margin:0;display:none;"></ul>
         <iframe id="calendarIframe" src="about:blank" frameborder="0" scrolling="no" style="display:none;"></iframe>
-    </div>
-    <div id="bountyBoardDiv">
-        <h2>Bounty Board</h2>
-        <ul id="bountyList"></ul>
     </div>
     <script src="index.js"></script>
 </body>
