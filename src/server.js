@@ -13,7 +13,8 @@
 //         daily.txt
 //         weekly.txt
 //         monthly.txt
-//       config.json    { "calendarUrl": "...", "icalFeeds": [...], "adminPinHash": "..." }
+//       chore-state.json  ticked chores + last reset time per type
+//       config.json   { "calendarUrl": "...", "icalFeeds": [...], "adminPinHash": "..." }
 //
 // Environment variables (all optional):
 //   DATA_DIR   – absolute path to the data folder  (default: ./data)
@@ -31,6 +32,7 @@ const DATA_DIR  = process.env.DATA_DIR  || path.join(__dirname, 'data');
 const CHORES_DIR = path.join(DATA_DIR, 'chores');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const BOUNTIES_FILE = path.join(DATA_DIR, 'bounties.json');
+const CHORE_STATE_FILE = path.join(DATA_DIR, 'chore-state.json');
 
 const VALID_TYPES = new Set(['daily', 'weekly', 'monthly']);
 
@@ -109,6 +111,39 @@ function writeLines(resetType, lines) {
 }
 
 // ---------------------------------------------------------------------------
+// Chore state helpers — which chores are ticked off, and when each reset type
+// last reset. Kept in data/chore-state.json so it survives reboots.
+//   { "lastReset": { "daily": "<ISO>", ... }, "checked": { "daily": ["text", ...], ... } }
+// ---------------------------------------------------------------------------
+function emptyChoreState() {
+    const state = { lastReset: {}, checked: {} };
+    for (const type of VALID_TYPES) {
+        state.lastReset[type] = null;
+        state.checked[type]   = [];
+    }
+    return state;
+}
+
+function readChoreState() {
+    const state = emptyChoreState();
+    try {
+        const saved = JSON.parse(fs.readFileSync(CHORE_STATE_FILE, 'utf8'));
+        for (const type of VALID_TYPES) {
+            if (saved.lastReset && saved.lastReset[type]) state.lastReset[type] = saved.lastReset[type];
+            if (saved.checked && Array.isArray(saved.checked[type])) state.checked[type] = saved.checked[type];
+        }
+    } catch (_) { /* missing or corrupt — start fresh */ }
+    return state;
+}
+
+function writeChoreState(state) {
+    // Write then rename, so a power cut mid-write can't leave a half-written file
+    const tmp = CHORE_STATE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
+    fs.renameSync(tmp, CHORE_STATE_FILE);
+}
+
+// ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
 app.use(express.json());
@@ -123,6 +158,62 @@ app.get('/api/chores', (req, res) => {
     const result = {};
     for (const type of VALID_TYPES) result[type] = readLines(type);
     res.json(result);
+});
+
+// GET /api/chores/state — ticked chores and last reset times (public)
+// Ticks for chores that have since been deleted are dropped.
+app.get('/api/chores/state', (req, res) => {
+    const state = readChoreState();
+    for (const type of VALID_TYPES) {
+        const current = new Set(readLines(type));
+        state.checked[type] = state.checked[type].filter(text => current.has(text));
+    }
+    res.json(state);
+});
+
+// POST /api/chores/check — tick or untick a chore (public)
+//   body: { "type": "daily", "text": "...", "checked": true }
+app.post('/api/chores/check', (req, res) => {
+    const type    = req.body.type;
+    const text    = (req.body.text || '').trim();
+    const checked = Boolean(req.body.checked);
+    if (!VALID_TYPES.has(type)) {
+        return res.status(400).json({ error: `Invalid reset type '${type}'.` });
+    }
+    if (!text) {
+        return res.status(400).json({ error: "'text' is required." });
+    }
+    const state = readChoreState();
+    const list  = state.checked[type].filter(t => t !== text);
+    if (checked) list.push(text);
+    state.checked[type] = list;
+    writeChoreState(state);
+    res.json({ status: 'saved', type, text, checked });
+});
+
+// POST /api/chores/reset/:type — untick every chore of this type (public)
+//   body: { "periodStart": "<ISO>" }
+// Only resets if the last reset was before periodStart (the start of the
+// current day/week/month in the browser's local time), so a second screen or
+// a page reload can't wipe chores ticked off since the reset already happened.
+app.post('/api/chores/reset/:type', (req, res) => {
+    const { type } = req.params;
+    if (!VALID_TYPES.has(type)) {
+        return res.status(400).json({ error: `Invalid reset type '${type}'.` });
+    }
+    const periodStart = new Date(req.body.periodStart);
+    if (isNaN(periodStart)) {
+        return res.status(400).json({ error: "'periodStart' must be an ISO date." });
+    }
+    const state     = readChoreState();
+    const lastReset = new Date(state.lastReset[type] || 0);
+    if (lastReset >= periodStart) {
+        return res.json({ status: 'skipped', ...state });
+    }
+    state.checked[type]   = [];
+    state.lastReset[type] = new Date().toISOString();
+    writeChoreState(state);
+    res.json({ status: 'reset', ...state });
 });
 
 // GET /api/chores/:type — chores for one reset type
@@ -498,6 +589,7 @@ app.post('/api/reset', requireAdminPin, (req, res) => {
     }
 
     writeBounties([]);
+    writeChoreState(emptyChoreState());
 
     res.json({ status: 'reset' });
 });

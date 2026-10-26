@@ -9,7 +9,7 @@
 // Chores are fetched from GET /api/chores on every load.
 // Calendar events are fetched from GET /api/calendar/events.
 // Admin PIN is verified via POST /api/pin/verify (hash stored in data/config.json).
-// Reset timestamps use localStorage — see the localStorage inventory at the bottom.
+// Ticked chores and reset timestamps are stored server-side via /api/chores/state.
 
 // ---------------------------------------------------------------------------
 // SHA-256 / PIN check
@@ -47,11 +47,13 @@ async function loadAndRenderChores() {
     const choresList = document.getElementById('choresList');
     if (!choresList) return;
 
-    let allChores;
+    let allChores, state;
     try {
-        const resp = await fetch('/api/chores');
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        allChores = await resp.json();
+        const [choresResp, stateResp] = await Promise.all([fetch('/api/chores'), fetch('/api/chores/state')]);
+        if (!choresResp.ok) throw new Error(`HTTP ${choresResp.status}`);
+        if (!stateResp.ok)  throw new Error(`HTTP ${stateResp.status}`);
+        allChores = await choresResp.json();
+        state     = await stateResp.json();
     } catch (err) {
         choresList.innerHTML = `<li style="color:#f88">Could not load chores: ${err.message}</li>`;
         return;
@@ -71,15 +73,25 @@ async function loadAndRenderChores() {
             input.setAttribute('data-reset', resetType);
             input.setAttribute('data-text', text);
 
-            // Restore checked state from sessionStorage so a page refresh
-            // doesn't un-tick items the user has already marked off.
-            const sessionKey = `checked_${resetType}_${text}`;
-            input.checked    = sessionStorage.getItem(sessionKey) === '1';
-            input.hidden     = input.checked;
+            // Checked state lives on the server so it survives reboots
+            input.checked = (state.checked[resetType] || []).includes(text);
+            input.hidden  = input.checked;
 
-            input.addEventListener('change', function () {
+            input.addEventListener('change', async function () {
                 this.hidden = this.checked;
-                sessionStorage.setItem(sessionKey, this.checked ? '1' : '0');
+                try {
+                    const resp = await fetch('/api/chores/check', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type: resetType, text, checked: this.checked }),
+                    });
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                } catch (err) {
+                    // Not saved — undo the tick so the screen matches the server
+                    this.checked = !this.checked;
+                    this.hidden  = this.checked;
+                    alert(`Could not save chore: ${err.message}`);
+                }
             });
 
             label.appendChild(input);
@@ -97,41 +109,34 @@ async function loadAndRenderChores() {
 // ---------------------------------------------------------------------------
 // Reset scheduling
 // ---------------------------------------------------------------------------
-function shouldReset(resetType) {
-    const now      = new Date();
-    const lastReset = new Date(localStorage.getItem(`lastReset_${resetType}`) || 0);
-
-    if (resetType === 'daily') {
-        const dayStart = new Date(now);
-        dayStart.setHours(0, 0, 0, 0);
-        return lastReset < dayStart;
-    }
-    if (resetType === 'weekly') {
-        const sunday = new Date(now);
-        sunday.setDate(now.getDate() - now.getDay());
-        sunday.setHours(0, 0, 0, 0);
-        return lastReset < sunday;
-    }
-    if (resetType === 'monthly') {
-        return lastReset < new Date(now.getFullYear(), now.getMonth(), 1);
-    }
-    return false;
+// Start of the current day / week (Sunday) / month in local time
+function periodStart(resetType) {
+    const now = new Date();
+    if (resetType === 'daily')  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (resetType === 'weekly') return new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+    return new Date(now.getFullYear(), now.getMonth(), 1);
 }
 
-function resetCheckboxes(resetType) {
-    document.querySelectorAll(`input[type="checkbox"][data-reset="${resetType}"]`)
-        .forEach(cb => {
-            cb.checked = false;
-            cb.hidden  = false;
-            sessionStorage.removeItem(`checked_${resetType}_${cb.getAttribute('data-text')}`);
-        });
-    localStorage.setItem(`lastReset_${resetType}`, new Date().toISOString());
-}
-
-function applyDueResets() {
-    ['daily', 'weekly', 'monthly'].forEach(type => {
-        if (shouldReset(type)) resetCheckboxes(type);
-    });
+// The server keeps the last reset time and only resets when it is older than
+// periodStart, so this is safe to call on every load. Resets missed while the
+// machine was off are applied on the next load. Returns true if any reset ran.
+async function applyDueResets() {
+    let anyReset = false;
+    for (const type of ['daily', 'weekly', 'monthly']) {
+        try {
+            const resp = await fetch(`/api/chores/reset/${type}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ periodStart: periodStart(type).toISOString() }),
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const { status } = await resp.json();
+            if (status === 'reset') anyReset = true;
+        } catch (err) {
+            console.error(`Could not apply ${type} chore reset: ${err.message}`);
+        }
+    }
+    return anyReset;
 }
 
 function scheduleDailyReset() {
@@ -139,8 +144,8 @@ function scheduleDailyReset() {
     const nextMidnight = new Date(now);
     nextMidnight.setDate(now.getDate() + 1);
     nextMidnight.setHours(0, 0, 0, 0);
-    setTimeout(function () {
-        applyDueResets();
+    setTimeout(async function () {
+        if (await applyDueResets()) await loadAndRenderChores();
         initCalendar();
         scheduleDailyReset();
     }, nextMidnight - now);
@@ -408,8 +413,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     const loginButton = document.getElementById('loginButton');
     if (loginButton) loginButton.addEventListener('click', askAdminPin);
 
+    await applyDueResets();
     await loadAndRenderChores();
-    applyDueResets();
     await initCalendar();
     await loadAndRenderBounties();
 
